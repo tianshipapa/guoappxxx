@@ -70,9 +70,8 @@ jobs:
             exit 1
           fi
           tag="app-v${version//+/-}"
-          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || gh release view "$tag" >/dev/null 2>&1; then
-            echo "版本 $version（$tag）已发布过，请先提升 pubspec.yaml 的 version。" >&2
-            exit 1
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 || gh release view "$tag" >/dev/null 2>&1; then
+            echo "::warning::版本 $version（$tag）已发布过，本次将覆盖更新该 release 的备注与资产。"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -375,6 +374,10 @@ jobs:
           if [ -n "$changes" ]; then
             { printf '更新内容：\n\n%s\n\n' "$changes"; cat notes.md; } > notes.tmp
             mv notes.tmp notes.md
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG 已存在，覆盖更新（删除后重建）。"
+            gh release delete "$TAG" --cleanup-tag -y
           fi
           gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "短剧视界 / 全剧视界 ${VERSION}" --notes-file notes.md
       - name: 推送到 Telegram 频道
