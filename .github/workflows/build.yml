@@ -123,6 +123,7 @@ jobs:
           set -euo pipefail
           export ANDROID_HOME="${RUNNER_TEMP}/android-sdk"
           export ANDROID_SDK_ROOT="${ANDROID_HOME}"
+          export ANDROID_NDK_HOME="${ANDROID_HOME}/ndk/28.2.13676358"
           export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
           mkdir -p "${ANDROID_HOME}/cmdline-tools"
           curl -fsSLo cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
@@ -132,6 +133,7 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-36" "ndk;28.2.13676358" "build-tools;35.0.0"
           echo "ANDROID_HOME=${ANDROID_HOME}" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=${ANDROID_HOME}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME}" >> "$GITHUB_ENV"
           echo "${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools" >> "$GITHUB_PATH"
       # 诊断：关键组件缺失时在此明确报错（打印实际缺失项），避免 build_android.py
       # 里 CGO 交叉编译阶段报成泛化的 "exit code 1"。
@@ -139,21 +141,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME}  ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}"
-          ndk_bin="${ANDROID_HOME}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # 复现 build_native.py 的取值逻辑：优先 ANDROID_NDK_HOME，否则 sdk/ndk/28.2.13676358
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          ndk_root="${ANDROID_NDK_HOME:-${sdk}/ndk/28.2.13676358}"
+          echo "ANDROID_HOME=${ANDROID_HOME}  ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<unset>}  ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-<unset>}"
+          echo "build_native.py 将使用的 NDK = ${ndk_root}"
+          ndk_bin="${ndk_root}/toolchains/llvm/prebuilt/linux-x86_64/bin"
           for c in aarch64-linux-android24-clang armv7a-linux-androideabi24-clang x86_64-linux-android24-clang; do
             if [ ! -x "${ndk_bin}/${c}" ]; then
               echo "缺少 NDK 编译器：${ndk_bin}/${c}" >&2
-              echo "---- 实际 ndk 目录 ----"; ls -la "${ndk_bin}/" 2>&1 || true
-              echo "---- 实际 sdk 根目录 ----"; ls -la "${ANDROID_HOME}" 2>&1 || true
+              echo "---- 实际 ndk_bin 目录 ----"; ls -la "${ndk_bin}/" 2>&1 || true
+              echo "---- 实际 ndk_root 目录 ----"; ls -la "${ndk_root}" 2>&1 || true
+              echo "---- 实际 sdk 根目录 ----"; ls -la "${sdk}" 2>&1 || true
               exit 1
             fi
           done
-          bt=$(find "${ANDROID_HOME}/build-tools" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | tail -n1 || true)
+          bt=$(find "${sdk}/build-tools" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | tail -n1 || true)
           if [ -z "${bt}" ]; then
             echo "未找到 build-tools（AGP 需要）" >&2; exit 1
           fi
-          echo "toolchain OK: NDK $(ls "${ndk_bin}" | grep -c clang) 个 clang，build-tools=${bt##*/}"
+          echo "toolchain OK: NDK $(ls "${ndk_bin}" | grep -c clang) 个 clang（${ndk_root}），build-tools=${bt##*/}"
       - name: Configure Android signing
         id: signing
         env:
