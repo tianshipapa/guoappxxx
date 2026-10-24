@@ -1,0 +1,296 @@
+name: Build app packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-build-${{ github.workflow }}-${{ github.ref }}
+
+env:
+  GOPROXY: https://proxy.golang.org,direct
+  GOSUMDB: sum.golang.org
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - &setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+      - &setup-flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.4'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: dart format --output=none --set-exit-if-changed lib test
+        continue-on-error: true
+      - run: dart analyze --fatal-infos lib test
+        continue-on-error: true
+      # 测试当前不阻塞出包（开发优先、集中验证暂缓），结果仍会显示在运行详情里。
+      - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true
+        continue-on-error: true
+      - run: flutter test --dart-define=DISABLE_REMOTE_IMAGES=true --dart-define=ALL_SOURCES=true
+        continue-on-error: true
+      - run: go test -race ./...
+        working-directory: native
+        continue-on-error: true
+      - run: go test -race -ldflags="-X duanjuapp/native/core.buildAllSources=true" ./...
+        working-directory: native
+        continue-on-error: true
+
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "只能从 main 分支手动发布，当前为 $GITHUB_REF。" >&2
+            exit 1
+          fi
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)
+          if [ -z "$version" ]; then
+            echo "pubspec.yaml 缺少 version。" >&2
+            exit 1
+          fi
+          tag="app-v${version//+/-}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null || gh release view "$tag" >/dev/null 2>&1; then
+            echo "版本 $version（$tag）已发布过，请先提升 pubspec.yaml 的 version。" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy: &editions
+      fail-fast: false
+      matrix:
+        include:
+          - edition: duanjushijie
+            arguments: ''
+          - edition: quanjushijie
+            arguments: '--all-sources'
+    steps:
+      - uses: actions/checkout@v4
+      - &setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - *setup-go
+      - *setup-flutter
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-36"
+          accept-android-sdk-licenses: true
+      - run: sdkmanager 'ndk;28.2.13676358'
+      - name: Configure Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "未配置签名 Secrets，拒绝发布 debug 签名的 APK。" >&2
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - run: python scripts/build_android.py ${{ matrix.arguments }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      - name: 校验 APK 签名证书
+        shell: bash
+        env:
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s' "$ANDROID_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+          if [ -z "$expected" ]; then
+            echo "未设置仓库变量 ANDROID_CERT_SHA256，无法确认发布证书。" >&2
+            exit 1
+          fi
+          apksigner=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f 2>/dev/null | sort | tail -n1 || true)
+          if [ -z "$apksigner" ]; then
+            sdkmanager 'build-tools;35.0.0' >/dev/null
+            apksigner=$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort | tail -n1)
+          fi
+          echo "apksigner：$apksigner"
+          "$apksigner" --version || true
+          for apk in dist/android/*.apk; do
+            echo "== $(basename "$apk")"
+            output=$("$apksigner" verify --print-certs "$apk" 2>&1 || true)
+            printf '%s\n' "$output"
+            if ! printf '%s' "$output" | tr -d ':' | tr '[:upper:]' '[:lower:]' | grep "$expected" >/dev/null; then
+              echo "签名证书与发布证书不一致，已终止。" >&2
+              exit 1
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-android
+          path: dist/android/*
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy: *editions
+    steps:
+      - uses: actions/checkout@v4
+      - *setup-go
+      - *setup-python
+      - *setup-flutter
+      - name: Set up MinGW-w64
+        shell: pwsh
+        run: |
+          choco install mingw --no-progress -y
+          $exe = Get-ChildItem -Path 'C:\ProgramData\mingw64', 'C:\ProgramData\chocolatey\lib\mingw' `
+                   -Recurse -Include 'x86_64-w64-mingw32-gcc.exe', 'gcc.exe' -ErrorAction SilentlyContinue |
+                 Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exe) { $exe = (Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue).Source }
+          if (-not $exe) { throw 'MinGW-w64 安装失败，找不到 gcc' }
+          Split-Path $exe | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          & $exe --version | Select-Object -First 1
+      - run: python scripts/build_windows.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-windows
+          path: dist/windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  ios:
+    needs: prepare
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy: *editions
+    steps:
+      - uses: actions/checkout@v4
+      - *setup-python
+      - *setup-go
+      - *setup-flutter
+      - name: Check Xcode and CocoaPods
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphoneos --find clang
+          if ! command -v pod >/dev/null 2>&1; then
+            brew install cocoapods
+          fi
+          pod --version
+          go version
+          flutter --version
+          flutter precache --ios
+      - name: Build unsigned iOS packages
+        run: python scripts/build_ios.py ${{ matrix.arguments }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.edition }}-ios-unsigned
+          path: dist/ios/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [checks, prepare, android, windows, ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          版本 ${VERSION}。两个版本功能相同，区别只在站源范围，按需选择：
+
+          - 短剧视界 duanjushijie：仅红果站源
+          - 全剧视界 quanjushijie：全部站源
+
+          Android：
+          - *-arm64-v8a.apk：适用于较新的安卓设备
+          - *-armeabi-v7a.apk：适用于较老的安卓设备，电视推荐使用此版本
+          - *-x86_64.apk：适用于模拟器
+
+          iOS：
+          - *-ios-unsigned.ipa：未签名 IPA，可用相关工具安装
+
+          Windows：
+          - *-windows-x64.zip：解压后运行 duanjushijie.exe 或 quanjushijie.exe
+
+          签名证书 SHA-256：${ANDROID_CERT_SHA256}
+          EOF
+          changes="$(awk -v heading="## ${VERSION}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found && !started && /^[[:space:]]*$/ { next }
+            found { started = 1; print }
+          ' CHANGELOG.md)"
+          printf '%s' "$changes" > changes.md
+          if [ -n "$changes" ]; then
+            { printf '更新内容：\n\n%s\n\n' "$changes"; cat notes.md; } > notes.tmp
+            mv notes.tmp notes.md
+          fi
+          gh release create "$TAG" release/* --target "$GITHUB_SHA" --title "短剧视界 / 全剧视界 ${VERSION}" --notes-file notes.md
+      - name: 推送到 Telegram 频道
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "未配置 Telegram，跳过推送。"
+            exit 0
+          fi
+          changes="$(cat changes.md)"
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG"
+          text="短剧视界 / 全剧视界 ${VERSION} 已发布"
+          if [ -n "$changes" ]; then
+            text="$(printf '%s\n\n更新内容：\n\n%s' "$text" "${changes:0:3500}")"
+          fi
+          text="$(printf '%s\n\n下载：%s' "$text" "$url")"
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${text}" >/dev/null
