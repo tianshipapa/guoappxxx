@@ -161,6 +161,30 @@ jobs:
             echo "未找到 build-tools（AGP 需要）" >&2; exit 1
           fi
           echo "toolchain OK: NDK $(ls "${ndk_bin}" | grep -c clang) 个 clang（${ndk_root}），build-tools=${bt##*/}"
+      # Flutter 工具链是 composite build（includeBuild flutter_tools/gradle），它的
+      # settings 只配了 dependencyResolutionManagement、没配 pluginManagement.repositories，
+      # 于是它 buildscript 里的 kotlin jvm 2.2.20 插件（→ kotlin-stdlib:2.2.21）只在默认的
+      # gradlePluginPortal 上解析——而门户不托管这个普通库 → "Could not find kotlin-stdlib:2.2.21"。
+      # 之前靠暖 Gradle 缓存没暴露；free-disk-space 清缓存后必须在线解析才报错。
+      # 用 init script 给「root + 每个 included build」的 pluginManagement 补 mavenCentral，
+      # 不改 SDK 文件、不碰 FAIL_ON_PROJECT_REPOS（那是 dependencyResolutionManagement，另一块）。
+      - name: Add Gradle init script (mavenCentral into every build's plugin classpath)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${HOME}/.gradle/init.d"
+          printf '%s\n' \
+            'beforeSettings { settings ->' \
+            '    settings.pluginManagement {' \
+            '        repositories {' \
+            '            mavenCentral()' \
+            '            gradlePluginPortal()' \
+            '            google()' \
+            '        }' \
+            '    }' \
+            '}' > "${HOME}/.gradle/init.d/flutter-repos.init.gradle"
+          echo "wrote ${HOME}/.gradle/init.d/flutter-repos.init.gradle:"
+          cat "${HOME}/.gradle/init.d/flutter-repos.init.gradle"
       - name: Configure Android signing
         id: signing
         env:
