@@ -150,6 +150,18 @@ func (d *Downloader) resolveProviderMedia(ctx context.Context, task Task) (provi
 	if chapter.Source == sourceHanxiaoquan {
 		return d.resolveHanxiaoquanMedia(ctx, task)
 	}
+	// 爱看机器人 / A123 / 短剧家族各有专用取流逻辑（抓当集播放页、算令牌、取 pp.la 等），
+	// 不能落到下面通用兜底：兜底按 chapter.VideoURL 直连解析，对 a123-play:// 前缀、
+	// 爱看一次性令牌这类地址会解不出有效播放地址，表现为「网页源视频均加载失败」。
+	if chapter.Source == sourceIkanbot {
+		return d.resolveIkanbotMedia(ctx, task)
+	}
+	if chapter.Source == sourceA123 {
+		return d.resolveA123Media(ctx, task)
+	}
+	if isDuanjuProviderSource(chapter.Source) {
+		return d.resolveDuanjuMedia(ctx, task)
+	}
 	if strings.HasPrefix(chapter.VideoURL, "hongguo-cenc://") {
 		return d.resolveHongguoMedia(ctx, task)
 	}
