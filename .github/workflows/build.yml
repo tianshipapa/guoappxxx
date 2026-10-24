@@ -108,22 +108,29 @@ jobs:
           accept-android-sdk-licenses: true
       - run: sdkmanager 'ndk;28.2.13676358'
       - name: Configure Android signing
+        id: signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
           if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "未配置签名 Secrets，拒绝发布 debug 签名的 APK。" >&2
-            exit 1
+            echo "::warning::未配置签名 Secrets，本次 Android 使用 debug 签名出包（仅测试用；正式发布请在仓库 Secrets 配置 ANDROID_KEYSTORE_* 后再跑）。"
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.jks" || {
+            echo "ANDROID_KEYSTORE_BASE64 不是合法 base64。" >&2
+            exit 1
+          }
           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "mode=release" >> "$GITHUB_OUTPUT"
       - run: python scripts/build_android.py ${{ matrix.arguments }}
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       - name: 校验 APK 签名证书
+        if: steps.signing.outputs.mode == 'release'
         shell: bash
         env:
           ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
@@ -220,8 +227,25 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  web:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - *setup-go
+      - *setup-python
+      - name: Build local service edition (短剧视界 / 全剧视界)
+        run: python scripts/build_web.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: dist/web/*
+          if-no-files-found: error
+          retention-days: 14
+
   release:
-    needs: [checks, prepare, android, windows, ios]
+    needs: [checks, prepare, android, windows, ios, web]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -256,6 +280,10 @@ jobs:
 
           Windows：
           - *-windows-x64.zip：解压后运行 duanjushijie.exe 或 quanjushijie.exe
+
+          本地服务版（web/）：
+          - duanjushijie.zip / quanjushijie.zip：解压后双击 start.bat（Windows）或执行 sh start.sh（macOS/Linux），浏览器打开 http://127.0.0.1:8000/web/
+          - guoappweb.zip：以上两个版本的合集（含 SHA256SUMS.txt）
 
           签名证书 SHA-256：${ANDROID_CERT_SHA256}
           EOF
