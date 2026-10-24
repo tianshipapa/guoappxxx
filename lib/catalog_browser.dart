@@ -172,6 +172,9 @@ class CatalogBrowser {
     bool force = false,
     bool useCache = false,
     bool cacheOnly = false,
+    // crossSource 为 true 时并发搜索 crossSources（可见站源）并归一去重，否则只搜当前站源。
+    bool crossSource = false,
+    List<String>? crossSources,
     void Function(CatalogPage)? onCached,
   }) async {
     if (cacheOnly && (more || force || query.trim().isNotEmpty)) {
@@ -253,6 +256,37 @@ class CatalogBrowser {
       if (cached.items.isNotEmpty) onCached?.call(cached);
       if (cacheOnly) return cached;
       if (cached.fresh && cached.items.isNotEmpty) return cached;
+    }
+
+    // 跨源聚合搜索：并发打所有可见站源，由原生核心按标题/年份/集数归一去重，
+    // 每条结果自带 peers（其它站源的同一部剧），供详情页一键切换播放源。
+    if (crossSource && query.trim().isNotEmpty) {
+      if (more) return snapshot();
+      try {
+        // 可见站源由调用方给出（站源管理里勾选显示的源），核心侧会跳过没有搜索接口的源。
+        final targets = crossSources ?? sourceOrder;
+        final result = await repository.searchAcross(targets, query);
+        if (generation != session.generation) return snapshot();
+        // 不写入 _library：搜索结果不应污染分类浏览的本地缓存。
+        for (final source in sourceOrder) {
+          session.entries[source]!.items = [
+            for (final drama in result.items)
+              if (drama.source == source) drama,
+          ];
+        }
+        return CatalogPage(
+          result.items,
+          hasMore: false,
+          page: 1,
+          fresh: false,
+          warning: result.warning,
+        );
+      } on AppFailure {
+        rethrow;
+      } catch (error) {
+        if (generation != session.generation) return snapshot();
+        throw AppFailure(error.toString());
+      }
     }
 
     await _each(sourceOrder, (source) async {

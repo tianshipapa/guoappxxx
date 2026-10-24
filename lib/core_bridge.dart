@@ -183,6 +183,9 @@ abstract class AppRepository {
     bool force = false,
   });
   Future<CatalogPage> cached(String source, {String category = ''});
+  /// 跨源聚合搜索：并发搜索 [sources] 并归一去重。无跨源能力的仓库默认不可用。
+  Future<CatalogPage> searchAcross(List<String> sources, String query) =>
+      throw AppFailure('当前环境不支持全部源搜索');
   Future<String> cover(Drama drama, {bool force = false});
   bool coverCached(Drama drama) => false;
   Future<DramaDetail> detail(Drama drama);
@@ -193,6 +196,8 @@ abstract class AppRepository {
     bool adBlock = true,
   });
   Future<PlaybackPlan> fallback(PlaybackPlan current);
+  Future<PlaybackPlan> selectRoute(PlaybackPlan current, int route) =>
+      throw AppFailure('当前环境不支持切换播放线路');
   Future<void> cancelPlayback();
   Future<void> release(String session);
   Future<List<CustomSourceSite>> customSources() async => const [];
@@ -748,6 +753,15 @@ class NativeRepository extends AppRepository {
         }),
       );
   @override
+  Future<CatalogPage> searchAcross(List<String> sources, String query) async =>
+      CatalogPage.fromJson(
+        await _call({
+          'action': 'searchAcross',
+          'sources': sources,
+          'query': query,
+        }),
+      );
+  @override
   bool coverCached(Drama drama) =>
       _coverPaths.containsKey('${drama.id}\u0000${drama.cover}');
 
@@ -813,6 +827,16 @@ class NativeRepository extends AppRepository {
         await _call({
           'action': 'fallback',
           'session': current.session,
+          'sequence': ++_playbackSequence,
+        }),
+      );
+  @override
+  Future<PlaybackPlan> selectRoute(PlaybackPlan current, int route) async =>
+      PlaybackPlan.fromJson(
+        await _call({
+          'action': 'selectRoute',
+          'session': current.session,
+          'route': route,
           'sequence': ++_playbackSequence,
         }),
       );

@@ -82,7 +82,21 @@ func newNativeCoverCache(directory string, downloader *Downloader) *nativeCoverC
 	return cache
 }
 
+func nativeDoubanCoverReferer(parsed *url.URL) (string, bool) {
+	host := strings.ToLower(parsed.Hostname())
+	if strings.HasSuffix(host, ".doubanio.com") || host == "doubanio.com" ||
+		strings.HasSuffix(host, ".douban.com") || host == "douban.com" {
+		return "https://movie.douban.com/", true
+	}
+	return "", false
+}
+
 func nativeCoverReferer(downloader *Downloader, source, address string) string {
+	if parsed, err := url.Parse(address); err == nil {
+		if referer, ok := nativeDoubanCoverReferer(parsed); ok {
+			return referer
+		}
+	}
 	if source == sourceCloudFront {
 		if parsed, err := url.Parse(address); err == nil && (strings.HasSuffix(strings.ToLower(parsed.Hostname()), ".zdmhyg.cn") || strings.EqualFold(parsed.Hostname(), "pic.tuafjz.cn")) {
 			return downloader.providerBaseURL(sourceHuangguoAI) + "/"

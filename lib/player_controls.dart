@@ -28,6 +28,8 @@ class PlayerControls extends StatefulWidget {
     required this.speed,
     required this.qualityLabel,
     required this.onFocusSurface,
+    this.routeLabel,
+    this.onRoute,
     this.showDanmaku = false,
     this.danmakuEnabled = false,
     this.danmakuStatus = '',
@@ -58,6 +60,8 @@ class PlayerControls extends StatefulWidget {
   final double speed;
   final String qualityLabel;
   final VoidCallback onFocusSurface;
+  final String? routeLabel;
+  final Future<void> Function()? onRoute;
   final bool showDanmaku;
   final bool danmakuEnabled;
   final String danmakuStatus;
@@ -768,6 +772,14 @@ class _PlayerControlsState extends State<PlayerControls> {
           onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
           width: 52,
         ),
+        if (widget.routeLabel != null && widget.onRoute != null)
+          _toolText(
+            key: const ValueKey('player-route'),
+            tooltip: '切换播放线路',
+            label: widget.routeLabel!,
+            onPressed: widget.enabled ? () => _panel(widget.onRoute!) : null,
+            width: 52,
+          ),
       ],
       if (showPush) _lanPushTool(const ValueKey('fullscreen-lan-push')),
       if (showEpisodes)
@@ -829,6 +841,14 @@ class _PlayerControlsState extends State<PlayerControls> {
         onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
         width: 52,
       ),
+      if (widget.routeLabel != null && widget.onRoute != null)
+        _toolText(
+          key: const ValueKey('player-route'),
+          tooltip: '切换播放线路',
+          label: widget.routeLabel!,
+          onPressed: widget.enabled ? () => _panel(widget.onRoute!) : null,
+          width: 52,
+        ),
       if (widget.onPush != null)
         _lanPushTool(const ValueKey('fullscreen-lan-push')),
       if (fullscreen)

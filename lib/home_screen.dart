@@ -62,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _categorySelections = <String, String>{};
   late final CatalogBrowser _browser;
   bool _searchVisible = false;
+  bool _crossSourceSearch = false;
   bool _categoriesLoading = false;
   String? _categoriesError;
   int _categoryGeneration = 0;
@@ -98,6 +99,35 @@ class _HomeScreenState extends State<HomeScreen> {
           .firstOrNull ??
       SourceGroup(_source.groupId, _source.groupName, [_source]);
   bool get _onlineSearch => _group.sources.any((source) => source.onlineSearch);
+
+  /// 跨源聚合搜索打的是站源管理里勾选显示的可见源，被隐藏的源不参与。
+  List<String> get _visibleSourceIds => [
+    for (final source in widget.store.sources) source.id,
+  ];
+
+  /// 本地片库的剧名（最近看过的 + 追剧/收藏），供首字母联想做拼音匹配。
+  /// 离线、不出端；输入 fczlm 会在这些剧名里命中「复仇者联盟」。
+  List<String> get _localTitles {
+    final seen = <String>{};
+    final titles = <String>[];
+    for (final entry in widget.store.history) {
+      final title = entry.drama.title.trim();
+      if (title.isNotEmpty && seen.add(title)) titles.add(title);
+    }
+    for (final drama in widget.store.favorites) {
+      final title = drama.title.trim();
+      if (title.isNotEmpty && seen.add(title)) titles.add(title);
+    }
+    return titles;
+  }
+
+  // 勾选跨源后，即便当前分组本身不支持在线搜索，也按全部可见源发起在线搜索。
+  // 自定义源在 Dart 侧 onlineSearch 恒为 false，但 Go 侧 searchAcross 能识别
+  // custom:* 源并并发搜索，不支持搜索的源会被静默跳过；是否真有结果由 Go 判定，
+  // 故这里只看「有没有可见源」，不再用 source.onlineSearch 过滤。
+  bool get _canSearchOnline =>
+      _onlineSearch || (_crossSourceSearch && _visibleSourceIds.isNotEmpty);
+
   bool get _searchSuggestions =>
       _group.sources.any((source) => source.searchSuggestions);
   String get _searchHint {
@@ -546,7 +576,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (more && (_loading || _loadingMore || !_hasMore)) return;
     final generation = ++_generation;
     final group = _group;
-    final query = _onlineSearch ? _search.text.trim() : '';
+    final query = _canSearchOnline ? _search.text.trim() : '';
     setState(() {
       _error = null;
       if (query.isNotEmpty) _categorySelections[group.id] = '';
@@ -588,6 +618,8 @@ class _HomeScreenState extends State<HomeScreen> {
         useCache: useCache,
         force: force,
         cacheOnly: cacheOnly,
+        crossSource: _crossSourceSearch,
+        crossSources: _crossSourceSearch ? _visibleSourceIds : null,
         onCached: (result) => accept(result, cached: true),
       );
       accept(result);
@@ -635,13 +667,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _debounce?.cancel();
     _selectionMode = false;
     _selectedDramas.clear();
-    if (_onlineSearch && (_loading || _loadingMore)) {
+    if (_canSearchOnline && (_loading || _loadingMore)) {
       _generation++;
       unawaited(_browser.cancel());
       _loading = _loadingMore = false;
     }
     setState(() {});
-    if (_onlineSearch && query.trim().isEmpty) {
+    if (_canSearchOnline && query.trim().isEmpty) {
       _debounce = Timer(const Duration(milliseconds: 300), () => _load());
     }
   }
@@ -663,10 +695,18 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    if (_onlineSearch) {
+    if (_canSearchOnline) {
       _load();
     } else {
       setState(() {});
+    }
+  }
+
+  void _changeCrossSource(bool value) {
+    if (_crossSourceSearch == value) return;
+    setState(() => _crossSourceSearch = value);
+    if (_canSearchOnline && _search.text.trim().isNotEmpty) {
+      _load();
     }
   }
 
@@ -1256,9 +1296,16 @@ class _HomeScreenState extends State<HomeScreen> {
               suggestions: _searchSuggestions
                   ? widget.repository.suggestions
                   : null,
+              localTitles: _localTitles,
               onChanged: _searchChanged,
               onCancel: () => unawaited(widget.repository.cancelSuggestions()),
               onSearch: _submitSearch,
+              crossSource: _crossSourceSearch,
+              onCrossSourceChanged:
+                  _crossSourceSearch || _visibleSourceIds.isNotEmpty
+                      ? _changeCrossSource
+                      : null,
+              crossSourceCount: _visibleSourceIds.length,
             ),
           ),
         if (_searchVisible &&

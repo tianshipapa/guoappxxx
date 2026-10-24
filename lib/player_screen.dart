@@ -17,6 +17,7 @@ import 'playback_diagnostics.dart';
 import 'luna_exo_player.dart';
 import 'danmaku_controller.dart';
 import 'danmaku_overlay.dart';
+import 'detail_screen.dart';
 import 'download_picker.dart';
 import 'downloads_screen.dart';
 import 'follow_state.dart';
@@ -160,6 +161,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       : _requestedQuality == 0
       ? '自动'
       : '${_requestedQuality}P';
+
+  /// 仅当本集有多条可用线路且非本地播放时返回控件条用的"线路 N"文案，否则 null。
+  String? get _routeLabel {
+    final plan = _plan;
+    if (plan == null || plan.local || plan.routeCount <= 1) return null;
+    return '线路 ${plan.routeIndex + 1}';
+  }
+
   String get _session => _plan?.session ?? '';
   double get _currentPosition =>
       _openedIndex == _index && _player.state.position.inMilliseconds > 0
@@ -938,6 +947,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     bool playWhenReady = true,
     PlaybackPlan? handoffPlan,
     bool showControlsOnReady = true,
+    int? switchRoute,
   }) async {
     if (_closed ||
         widget.store.profileEpoch != _profileEpoch ||
@@ -955,7 +965,10 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (index != _index) _forceOnline = false;
     final warmed =
         handoffPlan ??
-        (recoveryAction == null && _preloadEnabled && !widget.localOnly
+        (recoveryAction == null &&
+            switchRoute == null &&
+            _preloadEnabled &&
+            !widget.localOnly
             ? _preloader.take(
                 widget.detail.drama,
                 widget.detail.episodes[index],
@@ -1008,7 +1021,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         await _player.stop();
         final previous = _plan;
         _plan = null;
-        if (recoveryAction == PlaybackRecoveryAction.alternative) {
+        // 手动切线路与自动换备线都复用旧会话（selectRoute/fallback），
+        // 其余情况释放旧会话。
+        if (recoveryAction == PlaybackRecoveryAction.alternative ||
+            switchRoute != null) {
           retained = previous;
         } else if (previous != null) {
           await _releasePlayback(previous.session, 'replace_or_refresh');
@@ -1017,11 +1033,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (_closed || ticket != _generation) {
         return;
       }
-      prepared = retained != null
-          ? await _loader.fallback(retained!)
-          : warmed != null
-          ? await _loader.use(warmed)
-          : await _loader.load(
+      if (switchRoute != null && retained != null) {
+        prepared = await _loader.selectRoute(retained!, switchRoute);
+      } else {
+        prepared = retained != null
+            ? await _loader.fallback(retained!)
+            : warmed != null
+            ? await _loader.use(warmed)
+            : await _loader.load(
               widget.detail.drama,
               widget.detail.episodes[index],
               quality: _requestedQuality,
@@ -1029,6 +1048,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               online: _forceOnline,
               adBlock: _preferences.adBlock,
             );
+      }
       if (prepared == null) {
         return;
       }
@@ -1413,6 +1433,13 @@ class _PlayerScreenState extends State<PlayerScreen>
               },
               onFavorite: () =>
                   widget.store.toggleFavorite(widget.detail.drama),
+              routeIndex: _plan?.routeIndex ?? 0,
+              routeCount: _plan?.routeCount ?? 1,
+              onRoute: _plan == null
+                  ? null
+                  : (_plan!.local || _plan!.routeCount <= 1)
+                  ? null
+                  : (route) => _selectRoute(route),
             ),
           ),
         ),
@@ -1577,11 +1604,50 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _back() {
+    if (_television) {
+      // TV：全屏播放按「返回」应回到该剧选集项，而不是被系统当作「无下层」直接退软件。
+      // 下方还有路由（选集页/首页）就正常 pop 回去；播放页本身是根路由（冷启动/
+      // 直接进播放）时没有下层可弹，用 pushReplacement 顶到该剧的选集页，避免退软件。
+      final navigator = Navigator.of(context);
+      if (ModalRoute.of(context)?.isFirst ?? false) {
+        navigator.pushReplacement(
+          MaterialPageRoute<void>(
+            builder: (_) => DetailScreen(
+              drama: widget.detail.drama,
+              repository: widget.repository,
+              store: widget.store,
+            ),
+          ),
+        );
+      } else {
+        navigator.pop();
+      }
+      return;
+    }
     if (_showFullscreen && !_television) {
       _rotate();
     } else {
-      Navigator.of(context).maybePop();
+      // 遥控 / 物理「返回」/ 桌面「关闭」/ Esc：只要下方还有路由（如选集页）
+      // 就强制 pop 回去。播放器全屏时 canPop=false，裸 maybePop 会落空，被系统
+      // 当作「无下方页面」直接退 app。用 isFirst 判定 + 无条件 pop，确保只要
+      // 选集页在栈底就一定回到选集，只有播放页本身是首路由时才交还系统退出。
+      final navigator = Navigator.of(context);
+      if (ModalRoute.of(context)?.isFirst ?? false) {
+        navigator.maybePop();
+      } else {
+        navigator.pop();
+      }
     }
+  }
+
+  /// 手动切换到第 [route] 条线路：保留当前进度，复用旧会话走 selectRoute。
+  Future<void> _selectRoute(int route) async {
+    final plan = _plan;
+    if (plan == null || _loading || _closed) return;
+    if (route == plan.routeIndex) return;
+    // 先记下当前进度，切线后从原处继续。
+    final position = _currentPosition;
+    await _play(_index, position: position, switchRoute: route);
   }
 
   @override
@@ -1662,9 +1728,15 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fullscreen = _showFullscreen;
     final pictureInPicture = _pictureInPictureVisible;
     return PopScope(
-      canPop: _television || !fullscreen,
+      // TV 全屏下 canPop 置 false：系统返回键若直接弹掉根路由会让整个软件退出，
+      // 而用户期望是回到该剧选集项。统一交回 _back()/onPopInvokedWithResult 处理。
+      canPop: !_television && !fullscreen,
       onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && fullscreen && !_television) {
+        if (didPop) return;
+        if (_television) {
+          // 回到该剧选集项：下方还有路由就 pop，播放页本身是根路由就替换到选集页。
+          _back();
+        } else if (fullscreen) {
           _rotate();
         }
       },
@@ -1821,6 +1893,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             onEpisodes: () => _openPanel(PlayerMenuSection.episodes),
             onSpeed: () => _openPanel(PlayerMenuSection.speed),
             onQuality: () => _openPanel(PlayerMenuSection.quality),
+            routeLabel: _routeLabel,
+            onRoute: _routeLabel == null
+                ? null
+                : () => _openPanel(PlayerMenuSection.route),
             onDanmaku: widget.detail.drama.source == 'hongguo'
                 ? _toggleDanmaku
                 : null,

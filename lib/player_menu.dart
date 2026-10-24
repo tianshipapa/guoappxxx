@@ -9,7 +9,7 @@ import 'video_enhancement.dart';
 import 'video_enhancement_settings.dart';
 import 'diary_service.dart';
 
-enum PlayerMenuSection { episodes, speed, quality, settings }
+enum PlayerMenuSection { episodes, speed, quality, route, settings }
 
 class PlayerMenu extends StatefulWidget {
   const PlayerMenu({
@@ -26,6 +26,9 @@ class PlayerMenu extends StatefulWidget {
     required this.onEpisode,
     required this.onPreferences,
     required this.onFavorite,
+    this.routeIndex = 0,
+    this.routeCount = 1,
+    this.onRoute,
     this.showDanmaku = false,
     this.danmakuStatus = '',
     this.onRetryDanmaku,
@@ -52,6 +55,9 @@ class PlayerMenu extends StatefulWidget {
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
+  final int routeIndex;
+  final int routeCount;
+  final Future<void> Function(int)? onRoute;
 
   @override
   State<PlayerMenu> createState() => _PlayerMenuState();
@@ -85,6 +91,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
       PlayerMenuSection.episodes => '选集 · 共 ${widget.episodes.length} 集',
       PlayerMenuSection.speed => '播放倍速',
       PlayerMenuSection.quality => '清晰度',
+      PlayerMenuSection.route => '播放线路',
       PlayerMenuSection.settings => '播放设置',
     };
     return Dialog(
@@ -225,6 +232,43 @@ class _PlayerMenuState extends State<PlayerMenu> {
                 style: helperStyle,
               ),
             ),
+          const SizedBox(height: 20),
+        ],
+        if (all || widget.section == PlayerMenuSection.route) ...[
+          const Text('播放线路'),
+          const SizedBox(height: 8),
+          if (widget.routeCount <= 1)
+            Text(
+              '本集只有一条可用线路',
+              style: helperStyle,
+            )
+          else ...[
+            Text(
+              '当前第 ${widget.routeIndex + 1} / ${widget.routeCount} 条，切换后从原进度继续',
+              style: helperStyle,
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (var route = 0; route < widget.routeCount; route += 1)
+                  ChoiceChip(
+                    key: ValueKey('menu-route-$route'),
+                    label: Text('线路 ${route + 1}'),
+                    selected: route == widget.routeIndex,
+                    onSelected: _busy || widget.onRoute == null
+                        ? null
+                        : (_) => _run(
+                            () async {
+                              await widget.onRoute!(route);
+                              if (mounted) Navigator.pop(context);
+                            },
+                          ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 20),
         ],
         if ((all || widget.section == PlayerMenuSection.quality) &&
