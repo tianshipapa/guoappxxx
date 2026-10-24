@@ -45,6 +45,10 @@ func (d *Downloader) providerBaseURL(source string) string {
 		configured, fallback = d.cfg.GuipianURL, guipianSiteBaseURL
 	case sourceHanxiaoquan:
 		configured, fallback = d.cfg.HanxiaoquanURL, hanxiaoquanSiteBaseURL
+	case sourceIkanbot:
+		fallback = ikanbotSiteBaseURL
+	case sourceA123:
+		fallback = a123SiteBaseURL
 	default:
 		fallback = "https://d2pypzndaqisk.cloudfront.net"
 	}
@@ -81,6 +85,10 @@ func providerSourceForURL(raw string) string {
 		return sourceGuipian
 	case host == "jennyhow.com" || host == "www.jennyhow.com":
 		return sourceHanxiaoquan
+	case host == "ikanbot.com" || host == "www.ikanbot.com" || host == "www1.ikanbot.com":
+		return sourceIkanbot
+	case host == "a123tv.com" || host == "www.a123tv.com":
+		return sourceA123
 	default:
 		return ""
 	}
