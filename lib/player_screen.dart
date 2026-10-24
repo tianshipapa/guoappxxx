@@ -713,6 +713,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       widget.detail.drama,
       widget.detail.episodes[_index + 1],
       quality: _requestedQuality,
+      adBlock: _preferences.adBlock,
     );
   }
 
@@ -960,6 +961,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 widget.detail.episodes[index],
                 quality: _requestedQuality,
                 online: _forceOnline,
+                adBlock: _preferences.adBlock,
               )
             : null);
     _preloader.clear();
