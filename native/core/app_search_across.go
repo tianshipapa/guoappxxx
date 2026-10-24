@@ -32,7 +32,7 @@ var errSearchUnsupported = errors.New("站源暂不支持在线搜索")
 func nativeSourceSupportsSearch(source string) bool {
 	switch source {
 	case sourceHongguo, sourceHuangju, sourceGuipian, sourceHanxiaoquan,
-		sourceYeguo, sourceDSD, sourceA123, sourceIkanbot:
+		sourceYeguo, sourceDSD, sourceSorani, sourceA123, sourceIkanbot:
 		return true
 	}
 	if isDuanjuProviderSource(source) {
@@ -113,6 +113,17 @@ func (engine *nativeEngine) nativeSearchSource(ctx context.Context, source, quer
 		} else {
 			items, more, err = d.fetchDSDCatalogPage(ctx, page, "", query)
 		}
+		if err != nil {
+			return result, err
+		}
+		for _, drama := range items {
+			result.Items = append(result.Items, nativeNormalize(drama))
+		}
+		result.HasMore = more
+		return result, nil
+
+	case source == sourceSorani:
+		items, more, err := d.fetchSoraniCatalogPage(ctx, page, "", query)
 		if err != nil {
 			return result, err
 		}

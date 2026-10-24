@@ -7,14 +7,39 @@ class SourceSite {
   final String id;
   final String name;
   final String description;
-  bool get onlineSearch => id == 'hongguo' || pagedSearch;
+  bool get onlineSearch => id == 'hongguo' || pagedSearch || duanjuOnlineSearch;
+  bool get duanjuOnlineSearch => const {
+    'yaguo',
+    'maoguo',
+    'fanguo',
+    'guanguo',
+    'heguo',
+    'xingguo',
+    'huaguo',
+    'niuguo',
+    'wangguo',
+    'faguo',
+    'wuguo',
+  }.contains(id);
   bool get pagedSearch =>
       id == 'huangju' ||
       id == 'yeguo' ||
       id == 'dsd' ||
       id == 'sorani' ||
       id == 'guipian' ||
-      id == 'hanxiaoquan';
+      id == 'hanxiaoquan' ||
+      id == 'ikanbot' ||
+      id == 'a123' ||
+      duanjuPaged;
+  bool get duanjuPaged => const {
+    'yaguo',
+    'guanguo',
+    'huaguo',
+    'niuguo',
+    'wangguo',
+    'faguo',
+    'wuguo',
+  }.contains(id);
   bool get searchSuggestions => id == 'hongguo';
   String get groupId => switch (id) {
     'huangguo-video' || 'huangguoai' || 'cloudfront' => 'huangguo',
@@ -37,9 +62,34 @@ class SourceSite {
     '韩小圈',
     '韩剧 · 韩国电影 · 综艺动漫',
   );
+  static const ikanbot = SourceSite('ikanbot', '爱看机器人', '电影 · 剧集 · 多线路搜索');
+  static const a123 = SourceSite('a123', 'A123', '电影 · 连续剧 · 综艺 · 动漫 · 多线路');
 
-  /// 默认开启的站源：红果、韩小圈、鬼片网、青空次元。
-  static const primaryValues = [hongguo, hanxiaoquan, guipian, sorani];
+  /// 短剧家族内置源（全剧视界可用），与 Go 侧 duanjuProviderCatalog 对齐。
+  static const duanjuValues = [
+    SourceSite('yaguo', '芽果', '星芽短剧 · 登录接口'),
+    SourceSite('maoguo', '猫果', '七猫短剧 · 签名接口'),
+    SourceSite('fanguo', '饭果', '西饭短剧 · 搜索接口'),
+    SourceSite('guanguo', '观果', '围观短剧 · 分类接口'),
+    SourceSite('heguo', '河果', '河马剧场 · 网页接口'),
+    SourceSite('xingguo', '星果', '星星短剧 · 连载接口'),
+    SourceSite('huaguo', '花果', '花生短剧 · 网页目录'),
+    SourceSite('niuguo', '牛果', '牛牛短剧 · 分类接口'),
+    SourceSite('wangguo', '网果', '短剧网站 · 网页目录'),
+    SourceSite('faguo', '发果', '168 短剧 · 网页目录'),
+    SourceSite('wuguo', '伍果', '五五短剧 · 网页目录'),
+  ];
+
+  /// 默认开启的站源：红果、韩小圈、鬼片网、青空次元、A123、爱看机器人。
+  static const primaryValues = [
+    hongguo,
+    a123,
+    ikanbot,
+    hanxiaoquan,
+    guipian,
+    sorani,
+    ...duanjuValues,
+  ];
 
   /// 敏感站源：默认关闭，可在站源管理中开启。
   static const restrictedValues = [

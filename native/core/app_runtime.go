@@ -601,98 +601,8 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 	}
 	d := engine.downloader
 	result := nativeCatalogResult{Items: []nativeDrama{}, Page: page}
-	if query != "" && source == sourceHongguo {
-		entry, err := d.searchHongguoDramas(ctx, query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range entry.Dramas {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.Warning, result.Page = entry.Warning, 1
-		if entry.Limited && result.Warning == "" {
-			result.Warning = "已显示当前可获取的匹配结果，使用更完整的剧名可继续查找"
-		}
-		return result, nil
-	}
-	if query != "" && source == sourceHuangju {
-		items, more, err := d.fetchHuangjuCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && source == sourceSorani {
-		items, more, err := d.fetchSoraniCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && source == sourceGuipian {
-		items, more, err := d.fetchGuipianCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && source == sourceHanxiaoquan {
-		items, more, err := d.fetchHanxiaoquanCatalogPage(ctx, page, "", query)
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
-	if query != "" && (source == sourceYeguo || source == sourceDSD) {
-		var items []Drama
-		var more bool
-		var err error
-		if source == sourceYeguo {
-			items, more, err = d.fetchYeguoCatalogPage(ctx, page, "", query)
-		} else {
-			items, more, err = d.fetchDSDCatalogPage(ctx, page, "", query)
-		}
-		if err != nil {
-			return result, err
-		}
-		for _, drama := range items {
-			result.Items = append(result.Items, nativeNormalize(drama))
-		}
-		result.HasMore = more
-		return result, nil
-	}
 	if query != "" {
-		engine.mu.Lock()
-		items := append([]nativeDrama{}, engine.catalogs[source]...)
-		engine.mu.Unlock()
-		for _, item := range items {
-			text := hongguoSearchText(item.Title + " " + item.Description + " " + strings.Join(item.Tags, " "))
-			matches := true
-			for _, word := range strings.Fields(query) {
-				matches = matches && strings.Contains(text, hongguoSearchText(word))
-			}
-			if matches {
-				result.Items = append(result.Items, item)
-			}
-		}
-		result.LocalSearch = true
-		return result, nil
+		return engine.nativeSearchSource(ctx, source, query, page)
 	}
 	unlock, lockErr := engine.lockSourceCatalog(ctx, source)
 	if lockErr != nil {
@@ -768,11 +678,19 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 		result.HasMore = len(items) >= 20
 	case sourceCloudFront:
 		items, result.HasMore, err = d.fetchLegacyCatalogCategoryPage(ctx, page, category)
+	case sourceIkanbot:
+		items, result.HasMore, err = d.fetchIkanbotCatalogPage(ctx, page, category, "")
+	case sourceA123:
+		items, result.HasMore, err = d.fetchA123CatalogPage(ctx, page, category, "")
+	default:
+		if isDuanjuProviderSource(source) {
+			items, result.HasMore, err = d.fetchDuanjuCatalogPage(ctx, source, page, category)
+		}
 	}
 	if err != nil && len(items) == 0 {
 		return result, err
 	}
-	if len(items) == 0 && page == 1 && source != sourceHuangju && source != sourceYeguo && source != sourceDSD && source != sourceSorani && source != sourceGuipian && source != sourceHanxiaoquan {
+	if len(items) == 0 && page == 1 && source != sourceHuangju && source != sourceYeguo && source != sourceDSD && source != sourceSorani && source != sourceGuipian && source != sourceHanxiaoquan && source != sourceIkanbot && source != sourceA123 && !isDuanjuProviderSource(source) {
 		return result, errors.New("站源暂未返回剧集，请稍后刷新")
 	}
 	if err != nil {

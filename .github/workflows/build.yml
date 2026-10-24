@@ -101,6 +101,18 @@ jobs:
           java-version: '17'
       - *setup-go
       - *setup-flutter
+      # 构建机磁盘紧张（曾出现 stripReleaseDebugSymbols: No space left on device），
+      # 在装 Android SDK / NDK 之前清掉用不到的预装工具链与 Docker 缓存，腾出空间。
+      - name: Free up runner disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
