@@ -6,7 +6,6 @@ Flutter 多端独立短剧 / 影视应用
 
 两版以编译选项区分：默认版（短剧视界）仅红果站源；`--all-sources` 全站源版（全剧视界）额外启用黄豆、剧果、野果、帝果、黄果视频 / 黄果 AI / 黄果旧版等站源。分发包前缀为 `duanjushijie` / `quanjushijie`。
 
-Telegram：[交流群组](https://t.me/+c9YKHp7FjSk0MjI1) · [更新频道](https://t.me/+F9NnQSsMfOU3OTdl)
 
 ## 使用
 
