@@ -131,16 +131,32 @@ class LocalStore extends ChangeNotifier {
   }
 
   bool get canDownload => !locked && (profile.admin || profile.download);
-  bool allowsSource(String source) =>
-      !locked &&
-      SourceSite.isAvailable(source) &&
-      profile.allows(source) &&
-      sourceEnabled(source);
-  List<SourceSite> get sources =>
-      SourceSite.values.where((site) => allowsSource(site.id)).toList();
+  bool allowsSource(String source) {
+    if (locked) return false;
+    if (!SourceSite.isAvailable(source)) return false;
+    // 自定义源是设备级配置（所有本地用户共用），与 profile 授权无关，
+    // 直接放行；是否显示由 sourceEnabled（源显示开关）单独决定。
+    if (SourceSite.isCustomId(source)) {
+      return sourceEnabled(source);
+    }
+    return profile.allows(source) && sourceEnabled(source);
+  }
+
+  List<SourceSite> get sources {
+    final builtIn =
+        SourceSite.values.where((site) => allowsSource(site.id));
+    final custom = _customSources
+        .where((site) => allowsSource(site.id))
+        .map((site) => site.asSourceSite);
+    return [...builtIn, ...custom];
+  }
+
   List<SourceSite> get permittedSources => [
     for (final site in SourceSite.values)
       if (!locked && profile.allows(site.id)) site,
+    // 自定义源在站源管理页始终可见，可用源显示开关控制其是否进首页。
+    if (!locked)
+      for (final site in _customSources) site.asSourceSite,
   ];
 
   bool sourceEnabled(String source) =>

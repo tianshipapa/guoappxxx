@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'app_build.dart';
 import 'core_bridge.dart';
 import 'custom_sources_screen.dart';
 import 'local_store.dart';
@@ -284,7 +283,9 @@ class _SourcesScreenState extends State<SourcesScreen> {
           ),
         ),
         if (switchedOn) Text('${status?.count ?? 0} 部'),
-        if (allSourcesEnabled) ...[
+        // 源显示开关对所有版本（短剧/全剧视界）都可用，权限由 admin 控制，
+        // 不再用编译期 allSourcesEnabled 门控（否则短剧视界版该开关不渲染）。
+        ...[
           const SizedBox(width: 8),
           Switch(
             key: ValueKey('switch-${source.id}'),
