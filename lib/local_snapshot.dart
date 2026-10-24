@@ -17,10 +17,15 @@ class LocalSnapshot {
     'mediaHistory',
     'source',
     'hideVip',
+    // 源显示列表的隐藏集合（与 guoapp3 共用数据目录），放入受管字段，
+    // 避免读到含该键的旧快照时被判「本地配置字段无效」而整包锁死。
+    'hiddenSites',
     'playback',
     'downloadPreferences',
     'catalogView',
     'recentSearches',
+    // 观看统计（与 guoapp3 共用数据目录），同上。
+    'watchStats',
     'lanRecords',
     'lanSettings',
     'lanReceipts',
@@ -37,6 +42,8 @@ class LocalSnapshot {
     // 自定义源是设备级配置（移植自 guoapp3），所有本地用户共用，
     // 必须列入受管字段，否则保存自定义源或加载已有快照会被判为「本地配置字段无效」。
     'customSources',
+    // 播放器偏好（与 guoapp3 共用数据目录），同上，避免读到旧快照时锁死。
+    'player',
   };
   static const _retiredKeys = {
     'sourceGateEnabled',
@@ -51,7 +58,7 @@ class LocalSnapshot {
       globalKeys.contains(key) ||
       libraryKeys.contains(key) ||
       RegExp(
-        r'^profile\.[a-zA-Z0-9_-]{1,64}\.(history|favorites|followStates|seriesCandidates|mediaHistory|source|hideVip|playback|downloadPreferences|catalogView|recentSearches|lanRecords|lanSettings|lanReceipts)$',
+        r'^profile\.[a-zA-Z0-9_-]{1,64}\.(history|favorites|followStates|seriesCandidates|mediaHistory|source|hideVip|hiddenSites|playback|downloadPreferences|catalogView|recentSearches|watchStats|lanRecords|lanSettings|lanReceipts)$',
       ).hasMatch(key);
 
   Map<String, Object> get values => Map.of(_values);
