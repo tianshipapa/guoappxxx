@@ -45,7 +45,10 @@ func (d *Downloader) duanjuCachedToken(source string, ttl time.Duration, fetch f
 }
 
 func (d *Downloader) duanjuYaguoLoginURL() string {
-	if host := d.providerHosts[sourceYaguo]; host != "" && strings.TrimRight(host, "/") != yaguoBaseURL {
+	d.providerMu.Lock()
+	host := d.providerHosts[sourceYaguo]
+	d.providerMu.Unlock()
+	if host != "" && strings.TrimRight(host, "/") != yaguoBaseURL {
 		return strings.TrimRight(host, "/") + "/user/v1/account/login"
 	}
 	return yaguoLoginURL

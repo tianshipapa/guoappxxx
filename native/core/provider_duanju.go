@@ -137,7 +137,12 @@ func (d *Downloader) duanjuBaseURL(source string) string {
 	if !found {
 		return ""
 	}
-	if configured := d.providerHosts[canonicalProviderSource(source)]; configured != "" {
+	// providerHosts 与写方（黄果/黄豆回调）共用 providerMu；裸读会在并发取流时
+	// 触发「concurrent map read and write」fatal（recover 兜不住），必须加锁。
+	d.providerMu.Lock()
+	configured := d.providerHosts[canonicalProviderSource(source)]
+	d.providerMu.Unlock()
+	if configured != "" {
 		return strings.TrimRight(configured, "/")
 	}
 	return strings.TrimRight(spec.Base, "/")
