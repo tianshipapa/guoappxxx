@@ -59,6 +59,43 @@ String _nativeRequest(String body) {
   }
 }
 
+typedef _NativeStderrLog = Int32 Function(Pointer<Utf8>);
+typedef _DartStderrLog = int Function(Pointer<Utf8>);
+
+/// 把原生核心（c-shared / c-archive）的标准错误重定向到 [logPath]。
+///
+/// Go 运行时发生 fatal error（典型：并发 map 读写、OOM）时，会把完整堆栈
+/// 直接打到 stderr 然后 exit(2)；桌面端没有 console，这些输出会彻底丢失，
+/// 表现为「闪退却查不到任何日志」。重定向后即便 fatal 也能把堆栈留在文件里。
+/// 该符号在旧版原生核心里不存在，查找失败时静默跳过（旧包退回原行为）。
+void installStderrLog(String logPath) {
+  try {
+    final DynamicLibrary library;
+    if (Platform.isAndroid) {
+      library = DynamicLibrary.open('libduanju_core.so');
+    } else if (Platform.isWindows) {
+      library = DynamicLibrary.open(
+        path.join(path.dirname(Platform.resolvedExecutable), 'duanju_core.dll'),
+      );
+    } else if (Platform.isIOS) {
+      library = DynamicLibrary.process();
+    } else {
+      return;
+    }
+    final install = library.lookupFunction<_NativeStderrLog, _DartStderrLog>(
+      'DuanjuInstallStderrLog',
+    );
+    final ptr = logPath.toNativeUtf8();
+    try {
+      install(ptr);
+    } finally {
+      malloc.free(ptr);
+    }
+  } catch (_) {
+    // 符号不存在（旧原生核心）或路径不可写：忽略，退回原行为。
+  }
+}
+
 class AppFailure implements Exception {
   AppFailure(this.message, {this.code = ''});
   final String message;
@@ -692,6 +729,10 @@ class NativeRepository extends AppRepository {
   @override
   Future<void> initialize() async {
     final directory = await getApplicationSupportDirectory();
+    // 尽早把原生核心的标准错误重定向到日志文件：Go 运行时发生 fatal
+    // （并发 map 读写、OOM 等）时堆栈会写进 <logs>/native_stderr.log，
+    // 否则桌面端「闪退却查不到任何日志」。符号不存在时静默跳过。
+    installStderrLog(path.join(directory.path, 'logs', 'native_stderr.log'));
     if (!background) {
       DiaryService.nativeLogPath = path.join(directory.path, 'logs', 'app.log');
     }
