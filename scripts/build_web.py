@@ -5,6 +5,7 @@ import platform
 import re
 import shutil
 import subprocess
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -247,18 +248,53 @@ def readme(name, slug):
         '  数据保存在本目录下的 ' + slug + '-data，直接删除即可清空缓存。',
         '  关闭终端窗口或按 Ctrl+C 即停止服务。',
         '',
-        '关于 ffmpeg（可选，但强烈建议）：',
+        '关于 ffmpeg：',
         '  红果等站源的视频是加密的 H.265，浏览器既不能解密也不能解码，',
         '  必须由服务端调用 ffmpeg 解密并转码成 H.264 才能播放。',
-        '  Windows 上双击 start.bat 时若没检测到 ffmpeg，会提示是否自动下载，',
-        '  下载成功后 ffmpeg.exe 就放在本目录；选择跳过也没关系，下次启动还会再问。',
-        '  手动安装方式（装好后放到本目录或加入 PATH，重启服务即可）：',
-        '    Windows：winget install ffmpeg',
+        '  Windows 版已在本目录内置 ffmpeg.exe，开箱即播。',
+        '  macOS / Linux 需要本机安装 ffmpeg（装好后重启服务即可）：',
         '    macOS：brew install ffmpeg',
         '    Linux：apt install ffmpeg / yum install ffmpeg',
-        '  未安装时其余站源仍可正常播放；启动信息里会写明是否检测到 ffmpeg。',
+        '  未检测到 ffmpeg 时其余站源仍可正常播放；启动信息里会写明是否检测到 ffmpeg。',
         '',
     ])
+
+
+def fetch_ffmpeg():
+    """下载 GyanD 7.1 静态包并只取出 ffmpeg.exe，缓存到 build/web/ffmpeg/。
+
+    依次尝试 FFMPEG_MIRRORS；同一版第二次打包直接复用缓存。取不到时退出并
+    给出明确原因（ffmpeg.exe 要随 duanjushijie.zip / quanjushijie.zip 一起
+    发布，缺了它 Windows 版加密站源就没法播放）。
+    """
+    cache = root / 'build' / 'web' / 'ffmpeg'
+    cache.mkdir(parents=True, exist_ok=True)
+    exe = cache / 'ffmpeg.exe'
+    if exe.exists() and exe.stat().st_size > 1_000_000:
+        print('ffmpeg ready (cached) ' + str(exe), flush=True)
+        return exe
+    for url in FFMPEG_MIRRORS:
+        print('Downloading ffmpeg ' + url, flush=True)
+        blob = cache / 'ffmpeg-download.zip'
+        try:
+            blob.unlink(missing_ok=True)
+            urllib.request.urlretrieve(url, blob)
+            if blob.stat().st_size < 1_000_000:
+                print('ffmpeg download too small, trying next mirror', flush=True)
+                continue
+            with zipfile.ZipFile(blob) as src:
+                for name in src.namelist():
+                    if name.lower().endswith('ffmpeg.exe'):
+                        with src.open(name) as handle, open(exe, 'wb') as out:
+                            shutil.copyfileobj(handle, out)
+                        break
+            blob.unlink(missing_ok=True)
+            if exe.exists() and exe.stat().st_size > 1_000_000:
+                print('ffmpeg ready ' + str(exe), flush=True)
+                return exe
+        except Exception as exc:
+            print('ffmpeg mirror failed ' + url + ' (' + str(exc) + ')', flush=True)
+    raise SystemExit('所有 ffmpeg 下载源都失败，无法把 ffmpeg.exe 打进发布包。')
 
 
 def package_edition(slug):
@@ -281,6 +317,10 @@ def package_edition(slug):
     (staging / 'start.sh').chmod(0o755)
     (staging / 'start.bat').write_bytes(windows_script(slug).encode('gbk'))
     (staging / 'README.txt').write_text(readme(edition_name(slug), slug), encoding='utf-8')
+    # Windows 版随包携带 ffmpeg.exe（GyanD 7.1 静态包解压出的单文件），
+    # 加密站源开箱即播；macOS / Linux 二进制不依赖它（用各自系统的 ffmpeg）。
+    ffmpeg_exe = fetch_ffmpeg()
+    shutil.copy2(ffmpeg_exe, staging / 'ffmpeg.exe')
     archive = output / (slug + '.zip')
     archive.unlink(missing_ok=True)
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:

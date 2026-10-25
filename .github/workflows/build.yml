@@ -314,10 +314,11 @@ jobs:
       - *setup-python
       - name: Build local service edition (短剧视界 / 全剧视界)
         run: python scripts/build_web.py
+      # 两个单独版本 zip 只随 guoappweb.zip 合集发布，不在 release 里单独出资产。
       - uses: actions/upload-artifact@v4
         with:
           name: web
-          path: dist/web/*
+          path: dist/web/guoappweb.zip
           if-no-files-found: error
           retention-days: 14
 
@@ -358,9 +359,9 @@ jobs:
           Windows：
           - *-windows-x64.zip：解压后运行 duanjushijie.exe 或 quanjushijie.exe
 
-          本地服务版（web/）：
-          - duanjushijie.zip / quanjushijie.zip：解压后双击 start.bat（Windows）或执行 sh start.sh（macOS/Linux），浏览器打开 http://127.0.0.1:8000/web/
-          - guoappweb.zip：以上两个版本的合集（含 SHA256SUMS.txt）
+          本地服务版（web/guoappweb.zip）：
+          - guoappweb.zip：短剧视界 / 全剧视界 两个版本的合集（解压后得到 duanjushijie.zip / quanjushijie.zip，含 SHA256SUMS.txt）
+          - 两个版本 zip 内均已内置 Windows 版 ffmpeg.exe，解压后双击 start.bat（Windows）或执行 sh start.sh（macOS/Linux），浏览器打开 http://127.0.0.1:8000/web/
 
           签名证书 SHA-256：${ANDROID_CERT_SHA256}
           EOF
