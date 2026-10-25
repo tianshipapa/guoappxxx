@@ -50,6 +50,14 @@ func (d *Downloader) fetchHongguoWebDramas(ctx context.Context) ([]Drama, error)
 	for _, route := range routes {
 		route := route
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					d.recordGoroutinePanic("hongguo_route", r)
+					// 消费方按 routes 长度固定取结果，必须补发一条占位，
+					// 否则会卡死在 <-results 上（该路线静默降级为失败）。
+					results <- routeResult{err: fmt.Errorf("红果路由 %s 处理异常：%v", route.name, r)}
+				}
+			}()
 			dramas, err := d.fetchHongguoRoute(ctx, route.path, route.name)
 			results <- routeResult{dramas: dramas, err: err}
 		}()

@@ -1994,6 +1994,11 @@ func (d *Downloader) xbpqResolveRoutes(ctx context.Context, routes []string, rul
 		wg.Add(1)
 		go func(slot int, u string) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					d.recordGoroutinePanic("xbpq_resolve_one", r)
+				}
+			}()
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()

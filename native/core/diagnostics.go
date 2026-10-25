@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,4 +125,45 @@ func (downloader *Downloader) recordDiagnostic(event diagnosticEvent) {
 			fmt.Fprintf(os.Stderr, "诊断日志保存失败：%v\n", publicError(err))
 		})
 	}
+}
+
+// recordGoroutinePanic 把一次 goroutine 里的 panic 堆栈落盘到 app.log（事件
+// goroutine_panic，level=error）。调用方应在 defer recover 后调用；recover
+// 到值后进程不再 fatal，仅该 goroutine 静默退出。
+//
+// 该 helper 本身对写盘失败做 recover，避免在 recover 路径上二次 panic 触发
+// fatal（会抵消 recover 的保护效果）。
+func (downloader *Downloader) recordGoroutinePanic(label string, r any) {
+	defer func() { recover() }()
+	if downloader == nil {
+		return
+	}
+	stack := debug.Stack()
+	truncated := string(stack)
+	if len(truncated) > 4096 {
+		truncated = truncated[:4096]
+	}
+	event := diagnosticEvent{
+		Level:   "error",
+		Event:   "goroutine_panic",
+		Message: fmt.Sprintf("site=%s value=%v\n%s", label, fmt.Sprintf("%v", r), truncated),
+	}
+	downloader.recordDiagnostic(event)
+}
+
+// diagnosticLog 的 recover 版本：对没有 Downloader 上下文（如 LAN server
+// 构造期）调用方使用，把 stack 写到 <dir>/logs/app.log。
+func (log *diagnosticLog) recordPanic(label string, r any) {
+	if log == nil {
+		return
+	}
+	stack := string(debug.Stack())
+	if len(stack) > 4096 {
+		stack = stack[:4096]
+	}
+	_ = log.write(diagnosticEvent{
+		Level:   "error",
+		Event:   "goroutine_panic",
+		Message: fmt.Sprintf("site=%s value=%v\n%s", label, fmt.Sprintf("%v", r), stack),
+	})
 }

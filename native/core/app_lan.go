@@ -247,7 +247,14 @@ func newNativeLANServer(directory string, config nativeLANConfig) (*nativeLANSer
 			ClientAuth: tls.RequireAnyClientCert,
 		},
 	}
-	go func() { _ = link.server.Serve(tls.NewListener(listener, link.server.TLSConfig)) }()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				newDiagnosticLog(directory).recordPanic("lan_server_serve", r)
+			}
+		}()
+		_ = link.server.Serve(tls.NewListener(listener, link.server.TLSConfig))
+	}()
 	return link, nil
 }
 

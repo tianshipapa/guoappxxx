@@ -87,7 +87,14 @@ func newNativeStreamServer(d *Downloader) (*nativeStreamServer, error) {
 	stream := &nativeStreamServer{downloader: d, address: "http://" + listener.Addr().String(), sessions: map[string]*nativeStreamSession{}}
 	server := &http.Server{Handler: http.HandlerFunc(stream.nativeServe), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16384}
 	stream.server = server
-	go func() { _ = server.Serve(listener) }()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				d.recordGoroutinePanic("stream_server_serve", r)
+			}
+		}()
+		_ = server.Serve(listener)
+	}()
 	return stream, nil
 }
 

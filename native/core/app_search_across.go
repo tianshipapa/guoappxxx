@@ -217,6 +217,13 @@ func (engine *nativeEngine) nativeSearchAcross(ctx context.Context, input native
 		wg.Add(1)
 		go func(index int, source string) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					if engine != nil {
+						engine.downloader.recordGoroutinePanic("searchAcross", r)
+					}
+				}
+			}()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			sourceCtx, cancel := context.WithTimeout(ctx, perSourceTimeout)

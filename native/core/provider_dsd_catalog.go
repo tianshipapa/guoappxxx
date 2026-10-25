@@ -310,6 +310,11 @@ func (d *Downloader) fetchDSDCatalogPage(ctx context.Context, page int, category
 		group.Add(1)
 		go func(index int, category nativeCategory) {
 			defer group.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					d.recordGoroutinePanic("dsd_catalog_category", r)
+				}
+			}()
 			select {
 			case slots <- struct{}{}:
 				defer func() { <-slots }()

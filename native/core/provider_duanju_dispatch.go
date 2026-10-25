@@ -368,6 +368,11 @@ func (d *Downloader) collectMaccmsRouteVariants(ctx context.Context, pageURL, pr
 		waiter.Add(1)
 		go func(slot int, address string) {
 			defer waiter.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					d.recordGoroutinePanic("maccms_route_variant", r)
+				}
+			}()
 			found[slot] = d.maccmsResolveRoutePage(ctx, address, pageURL)
 		}(index, siteBase+path)
 	}

@@ -237,6 +237,11 @@ func (d *Downloader) fetchHuangguoAICatalogPage(ctx context.Context, page int, c
 		group.Add(1)
 		go func(index int, entry nativeCategory) {
 			defer group.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					d.recordGoroutinePanic("fetchHuangguoAICatalogPage", r)
+				}
+			}()
 			select {
 			case slots <- struct{}{}:
 				defer func() { <-slots }()
