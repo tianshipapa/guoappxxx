@@ -226,6 +226,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           _foreground &&
           !_panelOpen,
       baseSpeed: () => _speed,
+      holdRate: preferences.holdSpeed,
+      seekStep: preferences.swipeSeekSeconds,
       onTogglePlayback: _togglePlayback,
       onSeek: _seekTo,
       onFullscreen: _rotate,

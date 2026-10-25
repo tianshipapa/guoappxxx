@@ -83,6 +83,18 @@ class AppDevice {
     }
   }
 
+  /// 系统亮度调节能力。
+  ///
+  /// 只有 Android 由 MainActivity 提供窗口级亮度覆盖；桌面端没有等价
+  /// 能力，手势里必须据此关掉亮度分支，避免出现“有条无效果”的假调节。
+  static bool get brightnessSupported =>
+      defaultTargetPlatform == TargetPlatform.android;
+
+  /// 读取当前屏幕亮度（0.0 ~ 1.0）。
+  ///
+  /// 只对 Android 生效：窗口级亮度覆盖由 MainActivity 的 `getBrightness`
+  /// 通道返回；其它平台没有“屏幕亮度”这个概念，直接给 0.5 让播放器手势
+  /// HUD 有一个中性起点。
   static Future<double> getBrightness() async {
     if (defaultTargetPlatform != TargetPlatform.android) return 0.5;
     try {

@@ -158,7 +158,15 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   void _interactionChanged() {
-    if (mounted && widget.interactions.feedback.isNotEmpty) _show();
+    if (!mounted) return;
+    if (widget.interactions.boosting) {
+      // 长按快进时控制条必须退让，只留中央的倍速角标。
+      _hideTimer?.cancel();
+      if (_visible) setState(() => _visible = false);
+    } else if (widget.interactions.feedback.isNotEmpty &&
+        widget.interactions.feedbackRevealsControls) {
+      _show();
+    }
   }
 
   void _scheduleHide() {
@@ -1070,6 +1078,54 @@ class _PlayerControlsState extends State<PlayerControls> {
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+      if (hud.type == SwipeAction.seek) {
+        final forward = !hud.label.startsWith('后退');
+        return IgnorePointer(
+          child: Center(
+            child: Container(
+              width: 132,
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: .75),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: .15),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .4),
+                    blurRadius: 18,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    forward
+                        ? Icons.fast_forward_rounded
+                        : Icons.fast_rewind_rounded,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    hud.label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: .5,
                     ),
                   ),
                 ],
