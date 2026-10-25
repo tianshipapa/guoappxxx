@@ -1149,7 +1149,14 @@ class _PlayerControlsState extends State<PlayerControls> {
             child: Text(
               feedback,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              // 黑底是主题无关的（一直深灰），文字必须恒定白色，
+              // 否则亮主题下继承默认深色字，整块就变成一个「看不见的黑框」。
+              // 与上方快进/后退、亮度三个 HUD 框的白色字重对齐。
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),

@@ -303,7 +303,11 @@ class _TelevisionControlsState extends State<TelevisionControls> {
                       padding: const EdgeInsets.all(20),
                       child: Text(
                         '${formatPosition(position)} / ${formatPosition(duration)}',
-                        style: const TextStyle(fontSize: 26),
+                        // 黑底恒定深灰，字必须恒定白色，否则亮主题下是黑字压黑底。
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                        ),
                       ),
                     ),
                   ),
