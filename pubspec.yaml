@@ -39,6 +39,11 @@ dev_dependencies:
 dependency_overrides:
   media_kit_libs_windows_video:
     path: packages/media_kit_libs_windows_video
+  # Windows 上 media_kit_video 2.0.1 的 VideoOutput 存在并发缺陷（Render/CheckAndResize
+  # 与 Resize 竞争 + thread_pool 任务里抛 std::out_of_range → std::terminate →
+  # 0xc0000409 闪退），上游未修，这里用打过补丁的本地副本替换。
+  media_kit_video:
+    path: packages/media_kit_video
 
 flutter:
   config:
