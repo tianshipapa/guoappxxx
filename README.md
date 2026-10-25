@@ -44,7 +44,8 @@ python3 scripts/build_web.py                  # 两版都构建
 python3 scripts/build_web.py --edition quanjushijie   # 仅全剧视界版
 ~~~
 
-## 安装包与平台状态
+## 站源与可用性
+
 | 站源 | 浏览与播放 | 搜索 |
 | --- | --- | --- |
 | 红果 | 真人剧、漫剧、AI 剧及分集 | 联网搜索与官网搜索联想 |
@@ -64,7 +65,7 @@ python3 scripts/build_web.py --edition quanjushijie   # 仅全剧视界版
 | 平台 | 包与状态 |
 | --- | --- |
 | Android 7.0+ | 三架构（arm64-v8a / armeabi-v7a / x86_64）APK；同一签名可覆盖升级，旧证书版本需卸载重装 |
-| Windows 10/11 x64 | 完整 ZIP 解压后运行 `duanjushijie.exe` / `quanjushijie.exe`，保留所有 DLL 与 `data`；局域网原生发现依赖 Windows 10 1903+ |
+| Windows 10/11 x64 | 完整 ZIP 解压后运行 `duanjushijie.exe` / `quanjushijie.exe`，保留所有 DLL 与 `data`；局域网原生发现依赖 Windows 10 1903+。媒体层使用打过补丁的本地 `packages/media_kit_video`，修复切换视频或清晰度时的闪退（见下节） |
 | iOS 15.1+ | 已加入工程、Go 核心链接、媒体依赖、文件管理与构建脚本；iOS 播放页禁用 media_kit_video 硬件纹理加速以规避 libmpv 渲染崩溃；`CFBundleDisplayName` 使用英文 `DuanJuShijie` / `QuanJuShijie` 以通过 iloader 等侧载工具注册 App ID 时的名称校验，中文名写入 `zh-Hans.lproj/InfoPlist.strings`（开发快照，未经 Xcode 构建验证）；待 Xcode 构建与真机验收，无已签名 IPA |
 
 `INSTALL_FAILED_NO_MATCHING_ABIS` 表示 APK 与设备架构不匹配，请更换对应架构安装包。
@@ -84,6 +85,41 @@ python3 scripts/build_web.py --edition quanjushijie   # 仅全剧视界版
 checks（格式、分析、测试不阻塞）、Android、Windows、iOS 全部成功后才创建 tag 和 Release；任一平台失败就不发布。已有 Release 不会被覆盖。手动发布流程为开发快照，尚未完成首次运行验证。
 
 Android 签名只使用仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`；同时需要配置仓库变量 `ANDROID_CERT_SHA256`（证书 SHA-256，冒号和大小写不限）。缺少任意一项都会发布失败。CI 通过环境变量把签名传给 Gradle；本机构建使用 `android/key.properties`。`key.properties` 和证书文件不入库。
+
+## Windows 稳定性
+
+Windows 桌面端此前的闪退有三个互不相干的根因，均已修复。
+
+**1. 播几个视频就闪退（媒体引擎的 C++ 并发缺陷）**
+
+`media_kit_video` 2.0.1 的 Windows 插件里，渲染线程会按 `texture_id_` 取纹理，而 `Resize()`（每次视频分辨率变化都会触发——换集、切清晰度都算）会先清空 `texture_id_`、注销旧纹理、删除表项，之后才注册新纹理并重新赋值。句柄与纹理表不是原子更新，渲染线程读到中间态时 `std::unordered_map::at()` 抛 `std::out_of_range`，异常逃出工作线程即 `std::terminate`，进程被系统 fastfail 杀掉。因此这类闪退**既不产生 WER 转储、也没有崩溃日志**。
+
+上游到 2.0.1 为止没有修复，故把该插件本地化到 `packages/media_kit_video`，用 `dependency_overrides` 覆盖，**只改 Windows C++**（Dart 与其它平台代码与上游一致）：
+
+- 工作线程任务包 `try/catch`，异常只丢一帧，不再 terminate 进程
+- 渲染与尺寸检查改为锁内 `find()`，查不到纹理就跳过本帧，并整体 `try/catch`
+- `Resize()` 改为**先入表、再发布 `texture_id_`**，彻底消除中间态可见窗口
+- 析构保证等待信号一定被唤醒（否则会永久阻塞管理器互斥锁，之后所有播放都无法创建）
+
+改动均标记 `[duanju patch]`，原因与升级注意事项见 `packages/media_kit_video/DUANJU_PATCH.md`。**升级该依赖时必须重打补丁**，否则闪退复现。
+
+**2. 双击后直接闪退、连启动界面都没有**
+
+原生崩溃日志重定向曾把 `os.File.Fd()` 的返回值当作 C 运行时文件描述符传给 `_dup2`，但 Windows 上它是系统句柄（数值远大于文件描述符表范围），触发运行时参数校验后 `__fastfail` 结束进程。发生在初始化第一步，所以窗口来不及创建。已改为纯 Go 实现（Windows 用 `SetStdHandle` 改 `STD_ERROR_HANDLE`），不再触碰 C 运行时。**Windows 上任何 C 调用都不能接收 `Fd()` 的返回值。**
+
+**3. 站源配置并发读写**
+
+原生核心中站源基地址的读写曾缺少互斥保护，并发 map 读写属于不可恢复错误，运行时直接 `exit`，表现为静默退出。已加锁。
+
+崩溃留痕位置：
+
+| 文件 | 内容 |
+| --- | --- |
+| `<数据目录>/logs/app.log` | 应用运行日志（Windows 在 `%APPDATA%\全剧视界\全剧视界\logs`） |
+| `<数据目录>/logs/native_stderr.log` | 原生层致命错误堆栈（仅 Windows 有效） |
+| `<数据目录>/crash.log` | Dart 侧未捕获异常 |
+
+若 `native_stderr.log` 一直是 0 字节，先确认它是个可写文件：被设成目录或只读时重定向会失败跳过，且不会有任何提示。
 
 ## 开发与构建
 
@@ -120,7 +156,7 @@ flutter run
 
 调试全站源版：先给 `build_native.py` 加 `--all-sources`，再 `flutter run --dart-define=ALL_SOURCES=true`；iOS 对应 `build_ios.py --core-only --all-sources`。脚本会同步设置 Dart 常量和 Go 编译参数，应用启动时校验二者一致，避免混装原生库。
 
-播放器使用 [media_kit](https://github.com/media-kit/media-kit) / libmpv，合并和导出使用 [FFmpegKit min-gpl](https://github.com/sk3llo/ffmpeg_kit_flutter)（含 GPL 媒体组件）。FFmpegKit 不参与正常播放或下载的转码。
+播放器使用 [media_kit](https://github.com/media-kit/media-kit) / libmpv，合并和导出使用 [FFmpegKit min-gpl](https://github.com/sk3llo/ffmpeg_kit_flutter)（含 GPL 媒体组件）。FFmpegKit 不参与正常播放或下载的转码。Windows 上 `media_kit_video` 用 `packages/media_kit_video` 的本地补丁副本覆盖（修 2.0.1 的渲染线程崩溃，见「Windows 稳定性」）。
 
 ### 集中检查
 
@@ -142,7 +178,7 @@ go test -race -ldflags="-X duanjuapp/native/core.buildAllSources=true" ./...
 | `native/core`、`native/bridge` | 独立站源核心、缓存、下载、目录迁移及 C ABI |
 | `native/server` | 本地服务版（Go HTTP 服务 + 内嵌 web 前端，含直播代发），由 `scripts/build_web.py` 构建 |
 | `android`、`windows`、`ios` | 平台工程与必要资源 |
-| `assets/video_enhancement`、`packages/media_kit_libs_windows_video` | 增强 Shader 与许可、固定 Windows 媒体依赖插件 |
+| `assets/video_enhancement`、`packages/media_kit_libs_windows_video`、`packages/media_kit_video` | 增强 Shader 与许可、固定 Windows 媒体依赖插件、打过 Windows 补丁的 `media_kit_video`（见「Windows 稳定性」） |
 | `scripts`、`.github/workflows` | 构建与发布 |
 | `test` | 自动化测试 |
 
