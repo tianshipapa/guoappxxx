@@ -1727,7 +1727,7 @@ func (d *Downloader) xbpqDetail(ctx context.Context, source, base, sourceID stri
 			continue
 		}
 		chapter := duanjuChapter(source, sourceID, number, episode.title, link, link, base+"/")
-		chapter.Routes = xbpqAlternateRoutes(routeGroups, index, episode, link, pageURL)
+		chapter.Routes = xbpqAlternateRoutes(routeGroups, index, len(episodes), episode, link, pageURL)
 		chapters = append(chapters, chapter)
 	}
 	if len(chapters) == 0 {
@@ -1874,8 +1874,10 @@ func xbpqEpisodes(body, pageURL string, rule xbpqRule) ([]xbpqEpisode, [][]xbpqE
 }
 
 // xbpqAlternateRoutes 收集同一集在其它线路上的播放页地址，供播放时切换线路。
-// 同序号即视为同一集；标题不一致的线路整条跳过，避免集数不同导致的错位。
-func xbpqAlternateRoutes(groups [][]xbpqEpisode, index int, main xbpqEpisode, mainLink, pageURL string) []string {
+// mainCount 是主线路（集数最多那条）的集数。同序号视为同一集；仅当某线路集数
+// 与主线不同（尾部可能错位）且本集标题不一致时才整条跳过——集数相同的线路
+// （如电影各线路都 1 集、仅质量词 HD中字/正片 不同）按序号对齐即可，标题措辞不拦截。
+func xbpqAlternateRoutes(groups [][]xbpqEpisode, index, mainCount int, main xbpqEpisode, mainLink, pageURL string) []string {
 	if len(groups) < 2 {
 		return nil
 	}
@@ -1886,7 +1888,7 @@ func xbpqAlternateRoutes(groups [][]xbpqEpisode, index int, main xbpqEpisode, ma
 			continue
 		}
 		entry := group[index]
-		if entry.title != "" && main.title != "" && entry.title != main.title {
+		if len(group) != mainCount && entry.title != "" && main.title != "" && entry.title != main.title {
 			continue
 		}
 		link := xbpqJoinLink(pageURL, entry.url)

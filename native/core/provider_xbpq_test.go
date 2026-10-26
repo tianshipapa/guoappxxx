@@ -331,6 +331,36 @@ func TestXBPQWithoutRouteArrayKeepsSingleRoute(t *testing.T) {
 	}
 }
 
+// 回归《黑球》式电影多线路：4 条线路容器各 1 集，分集标题是线路质量词
+// （HD中字/正片）彼此不同。旧守卫「标题不一致整条跳过」会把 4 条砍成 2 条；
+// 修复后集数相同（各 1 集）即按序号对齐，4 条线路全部保留。
+const xbpqFilmMultiRouteDetail = `<html><body><h1>黑球</h1>
+<ul class="playlist"><li><a href="/play/225649-3-1.html">HD中字</a></li></ul>
+<ul class="playlist"><li><a href="/play/225649-4-1.html">正片</a></li></ul>
+<ul class="playlist"><li><a href="/play/225649-1-1.html">HD中字</a></li></ul>
+<ul class="playlist"><li><a href="/play/225649-2-1.html">正片</a></li></ul>
+</body></html>`
+
+func TestXBPQFilmMultiRouteKeepsAll(t *testing.T) {
+	d, server := xbpqFixtureServer(t, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(xbpqFilmMultiRouteDetail))
+	})
+	rule, _ := parseXBPQRule(xbpqMultiRouteRuleJSON)
+	id := xbpqIDFromLink(server.URL+"/vod/225649.html", false)
+	_, chapters, err := d.xbpqDetail(context.Background(), "custom:xbpqfilm", server.URL, id, rule)
+	if err != nil {
+		t.Fatalf("电影多线路详情失败: %v", err)
+	}
+	// 4 条线路各 1 集：主线路 1 集，每集挂 3 条备选（4 条去掉主线）。
+	if len(chapters) != 1 {
+		t.Fatalf("分集数 = %d, 期望 1", len(chapters))
+	}
+	if len(chapters[0].Routes) != 3 {
+		t.Fatalf("备选线路数 = %d, 期望 3（4 条线路去掉主线）", len(chapters[0].Routes))
+	}
+}
+
 // 解析播放地址时把其余线路并发解析进 Variants，主线路失败则由备选顶上。
 func TestXBPQResolveFillsRouteVariants(t *testing.T) {
 	var base string
