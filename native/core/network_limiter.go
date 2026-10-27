@@ -91,6 +91,10 @@ type requestLimiter struct {
 
 type backgroundCatalogKey struct{}
 
+// requestLaneKey 让同一来源的请求可以再划分到独立的限流泳道，
+// 例如红果的辅助设备不应占用主设备的并发额度。
+type requestLaneKey struct{}
+
 func newRequestLimiter(concurrency int, interval time.Duration) *requestLimiter {
 	if concurrency < 1 {
 		concurrency = 1
@@ -112,6 +116,9 @@ func (limiter *requestLimiter) acquire(ctx context.Context, request *http.Reques
 		if strings.HasSuffix(host, ".cloudfront.net") {
 			source = "cloudfront"
 		}
+	}
+	if lane, _ := ctx.Value(requestLaneKey{}).(string); lane != "" {
+		source += "#" + lane
 	}
 	limiter.mu.Lock()
 	if !background {

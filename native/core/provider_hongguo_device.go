@@ -18,14 +18,33 @@ const (
 	hongguoDeviceRegisterPause = 10 * time.Minute
 )
 
-func (downloader *Downloader) ensureHongguoDevice(ctx context.Context, rejected string) error {
+type hongguoHelperDeviceKey struct{}
+
+func (client *hongguoAppClient) deviceLocked(helper bool) (string, string, bool) {
+	if helper {
+		return client.state.HelperDeviceID, client.state.HelperInstallID, client.state.HelperDeviceID != ""
+	}
+	return client.state.DeviceID, client.state.InstallID, client.state.Registered
+}
+
+func (client *hongguoAppClient) device(helper bool) (string, string, bool) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return client.deviceLocked(helper)
+}
+
+func (downloader *Downloader) ensureHongguoDevice(ctx context.Context, helper bool, rejected string) error {
 	client := downloader.hongguoClient()
+	settled := func() bool {
+		current, _, registered := client.device(helper)
+		return rejected == "" && registered || rejected != "" && rejected != current
+	}
+	if settled() {
+		return nil
+	}
 	client.deviceMu.Lock()
 	defer client.deviceMu.Unlock()
-	client.mu.Lock()
-	current, registered := client.state.DeviceID, client.state.Registered
-	client.mu.Unlock()
-	if rejected == "" && registered || rejected != "" && rejected != current {
+	if settled() {
 		return nil
 	}
 	if time.Now().Before(client.registerPausedUntil) {
@@ -39,7 +58,11 @@ func (downloader *Downloader) ensureHongguoDevice(ctx context.Context, rejected 
 		return err
 	}
 	client.mu.Lock()
-	client.state.DeviceID, client.state.InstallID, client.state.Registered = deviceID, installID, true
+	if helper {
+		client.state.HelperDeviceID, client.state.HelperInstallID = deviceID, installID
+	} else {
+		client.state.DeviceID, client.state.InstallID, client.state.Registered = deviceID, installID, true
+	}
 	client.mu.Unlock()
 	return nil
 }
