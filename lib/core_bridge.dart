@@ -237,6 +237,15 @@ abstract class AppRepository {
       throw AppFailure('当前环境不支持切换播放线路');
   Future<void> cancelPlayback();
   Future<void> release(String session);
+
+  /// 投屏转发用：把当前播放会话在局域网口再挂一份，返回电视能访问的内网基址。
+  /// 直连原始线路的投屏不走这里（也就不需要手机一直开着）。
+  Future<String> castBase({String peer = ''}) async =>
+      throw AppFailure('当前环境不支持投屏');
+
+  /// 关掉投屏转发端口。没开过也能安全调用。
+  Future<void> releaseCastBase() async {}
+
   Future<List<CustomSourceSite>> customSources() async => const [];
   Future<CustomSourceSite> addCustomSource({
     required String name,
@@ -1039,6 +1048,19 @@ class NativeRepository extends AppRepository {
     }
     try {
       await _call({'action': 'release', 'session': session});
+    } catch (_) {}
+  }
+
+  @override
+  Future<String> castBase({String peer = ''}) async {
+    final result = await _call({'action': 'castBase', 'peer': peer});
+    return result['base']?.toString() ?? '';
+  }
+
+  @override
+  Future<void> releaseCastBase() async {
+    try {
+      await _call({'action': 'closeCast'});
     } catch (_) {}
   }
 

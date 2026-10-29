@@ -132,6 +132,7 @@ type nativeInput struct {
 	Route            int                     `json:"route"`
 	Session          string                  `json:"session"`
 	Sequence         int64                   `json:"sequence"`
+	Peer             string                  `json:"peer"`
 	Force            bool                    `json:"force"`
 	AdBlock          *bool                   `json:"adBlock"`
 }
@@ -153,6 +154,10 @@ type nativePlan struct {
 	DanmakuID       string            `json:"danmakuId,omitempty"`
 	Local           bool              `json:"local"`
 	URL             string            `json:"url"`
+	// DirectURL 是站源返回的原始播放地址（未经本机中转）。投屏时优先用它，
+	// 让电视自己去拉流，手机退出 App 也不影响播放。只有不需要本机重写播放
+	// 列表、也不需要本机解密分片时才非空；本地文件与加密线路为空。
+	DirectURL       string            `json:"directUrl,omitempty"`
 	Headers         map[string]string `json:"headers"`
 	Key             string            `json:"decryptionKey,omitempty"`
 	Quality         int               `json:"quality"`
@@ -519,6 +524,18 @@ func nativeDispatch(input nativeInput) (any, error) {
 		return true, nil
 	case "release":
 		engine.nativeReleasePlayback(input.Session)
+		return true, nil
+	// 投屏：直连原始线路时用不上这两条；只有需要手机转发的线路才让核心把
+	// 当前会话再挂一份到 0.0.0.0，返回电视能访问的内网基址。Peer 是电视地址，
+	// 用来确定手机这一侧走哪块网卡（Android 网卡枚举不一定可用）。
+	case "castBase":
+		base, err := engine.nativeCastBase(input.Peer)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"base": base}, nil
+	case "closeCast":
+		engine.nativeCloseCast()
 		return true, nil
 	case "searchAcross":
 		return engine.nativeSearchAcross(ctx, input)

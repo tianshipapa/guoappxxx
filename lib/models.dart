@@ -379,6 +379,7 @@ class CatalogPage {
 class PlaybackPlan {
   const PlaybackPlan({
     required this.url,
+    this.directUrl = '',
     this.headers = const {},
     this.decryptionKey = '',
     this.quality = 0,
@@ -392,6 +393,12 @@ class PlaybackPlan {
     this.local = false,
   });
   final String url;
+
+  /// 站源返回的原始播放地址，未经本机中转。投屏时优先用它，电视自己上网
+  /// 拉流，手机退出 App 也能继续播。空串表示这条线路只能经手机转发
+  /// （本地文件、需要本机解密或重建播放列表的加密线路）。
+  final String directUrl;
+
   final Map<String, String> headers;
   final String decryptionKey;
   final int quality;
@@ -406,6 +413,7 @@ class PlaybackPlan {
   bool get hasAlternative => session.isNotEmpty && routeIndex + 1 < routeCount;
   factory PlaybackPlan.fromJson(Map<String, dynamic> json) => PlaybackPlan(
     url: json['url'] as String? ?? '',
+    directUrl: json['directUrl'] as String? ?? '',
     local: json['local'] == true,
     headers: (json['headers'] as Map? ?? {}).map(
       (key, value) => MapEntry(key.toString(), value.toString()),

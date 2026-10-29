@@ -32,6 +32,8 @@ class MainActivity : FlutterActivity() {
     private var headroomReadAt = 0L
     private var thermalHeadroom: Double? = null
     private var deviceChannel: MethodChannel? = null
+    private var castChannel: MethodChannel? = null
+    private var cast: DlnaCast? = null
     private var televisionMode = false
 
     @Suppress("DEPRECATION")
@@ -260,6 +262,62 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
+        // 投屏（DLNA）：Flutter 侧只负责选设备与按钮，搜索 / SOAP 下发都在
+        // DlnaCast 的单线程里跑，网络耗时不能占主线程。
+        val dlna = DlnaCast(applicationContext)
+        cast = dlna
+        castChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "duanju/cast")
+            .also { channel ->
+                channel.setMethodCallHandler { call, result ->
+                    when (call.method) {
+                        "discover" -> dlna.discover { devices, error ->
+                            result.success(
+                                mapOf(
+                                    "devices" to devices.map { it.toMap() },
+                                    "error" to error
+                                )
+                            )
+                        }
+                        "play" -> {
+                            val control = call.argument<String>("controlUrl").orEmpty()
+                            val url = call.argument<String>("url").orEmpty()
+                            val title = call.argument<String>("title").orEmpty()
+                            val position = call.argument<Number>("positionMs")?.toLong() ?: 0L
+                            // 直连投屏电视自己拉流，只有转发才需要手机保持唤醒。
+                            val relay = call.argument<Boolean>("relay") ?: false
+                            if (control.isEmpty() || url.isEmpty()) {
+                                result.error("invalid_cast", "缺少投屏设备或播放地址", null)
+                            } else {
+                                dlna.play(control, url, title, position, relay) { ok, message ->
+                                    if (ok) result.success(null)
+                                    else result.error("cast_failed", message, null)
+                                }
+                            }
+                        }
+                        "control" -> {
+                            val control = call.argument<String>("controlUrl").orEmpty()
+                            val command = call.argument<String>("command").orEmpty()
+                            if (control.isEmpty() || command.isEmpty()) {
+                                result.error("invalid_cast", "缺少投屏设备或操作", null)
+                            } else {
+                                dlna.control(control, command) { ok, message ->
+                                    if (ok) result.success(null)
+                                    else result.error("cast_failed", message, null)
+                                }
+                            }
+                        }
+                        "status" -> {
+                            val control = call.argument<String>("controlUrl").orEmpty()
+                            if (control.isEmpty()) {
+                                result.success(mapOf("state" to "UNKNOWN"))
+                            } else {
+                                dlna.status(control) { state -> result.success(state) }
+                            }
+                        }
+                        else -> result.notImplemented()
+                    }
+                }
+            }
     }
 
     @ChecksSdkIntAtLeast(api = Build.VERSION_CODES.O)
@@ -315,6 +373,10 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         deviceChannel?.setMethodCallHandler(null)
         deviceChannel = null
+        castChannel?.setMethodCallHandler(null)
+        castChannel = null
+        cast?.close()
+        cast = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

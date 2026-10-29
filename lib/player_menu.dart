@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'cast/cast_controller.dart';
 import 'models.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
@@ -35,6 +36,7 @@ class PlayerMenu extends StatefulWidget {
     this.preloadStatus = '',
     this.enhancement,
     this.onCompareEnhancement,
+    this.onCast,
   });
 
   final PlayerMenuSection section;
@@ -52,6 +54,9 @@ class PlayerMenu extends StatefulWidget {
   final String preloadStatus;
   final VideoEnhancementController? enhancement;
   final VoidCallback? onCompareEnhancement;
+
+  /// 打开投屏面板。null 表示当前平台/场景不支持投屏（如本地文件、非 Android）。
+  final VoidCallback? onCast;
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
@@ -269,6 +274,38 @@ class _PlayerMenuState extends State<PlayerMenu> {
               ],
             ),
           ],
+          const SizedBox(height: 20),
+        ],
+        if (all && widget.onCast != null) ...[
+          Text('投屏', style: helperStyle.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          ListenableBuilder(
+            listenable: CastController.instance,
+            builder: (context, _) {
+              final cast = CastController.instance;
+              return ListTile(
+                key: const ValueKey('player-cast'),
+                contentPadding: EdgeInsets.zero,
+                enabled: !widget.local,
+                leading: Icon(
+                  cast.casting ? Icons.tv_rounded : Icons.cast_rounded,
+                ),
+                title: Text(
+                  cast.casting ? (cast.device?.name ?? '投屏设备') : '投屏到电视',
+                ),
+                subtitle: Text(
+                  cast.casting
+                      ? '${cast.playing ? '正在投屏' : '已暂停'} · '
+                            '${cast.relayed ? '经手机转发' : '电视直连，可退出 App'}'
+                      : widget.local
+                      ? '本地文件不支持投屏'
+                      : '同一 Wi-Fi 下搜索电视、盒子或投影仪',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: widget.local ? null : widget.onCast,
+              );
+            },
+          ),
           const SizedBox(height: 20),
         ],
         if ((all || widget.section == PlayerMenuSection.quality) &&

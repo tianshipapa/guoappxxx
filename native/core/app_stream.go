@@ -51,6 +51,13 @@ type nativeStreamServer struct {
 	address    string
 	sessions   map[string]*nativeStreamSession
 	server     *http.Server
+
+	// 投屏用：同一个 handler 再挂一份到 0.0.0.0，让局域网里的电视 / 投影仪
+	// 按本机内网地址拉流。只在真的需要手机转发时才打开，停止投屏就关掉；
+	// 直连原始线路的投屏根本不走这里。
+	castServer   *http.Server
+	castListener net.Listener
+	castBase     string
 }
 
 func (stream *nativeStreamServer) nativeRequest(request *http.Request) (*http.Response, error) {
@@ -157,6 +164,13 @@ func (stream *nativeStreamServer) nativeRelease(token string) {
 }
 
 func (stream *nativeStreamServer) nativeAsset(token string, session *nativeStreamSession, asset nativeStreamAsset) string {
+	return stream.nativeAssetAt(stream.address, token, session, asset)
+}
+
+// nativeAssetAt 与 nativeAsset 相同，只是把「对外基址」显式传进来：
+// 本机播放是 127.0.0.1，投屏转发时电视按手机内网地址请求，播放列表里写回的
+// 绝对地址必须跟着请求 Host 走，否则电视拿到 127.0.0.1 的分片就播不出来。
+func (stream *nativeStreamServer) nativeAssetAt(base, token string, session *nativeStreamSession, asset nativeStreamAsset) string {
 	digest := sha256.Sum256([]byte(asset.address + "\x00" + asset.contentType))
 	extension := ".ts"
 	if parsed, err := url.Parse(asset.address); err == nil {
@@ -179,10 +193,16 @@ func (stream *nativeStreamServer) nativeAsset(token string, session *nativeStrea
 		session.assets[id] = asset
 	}
 	session.mu.Unlock()
-	return stream.address + "/" + token + "/" + id
+	return base + "/" + token + "/" + id
 }
 
 func (stream *nativeStreamServer) nativeRewrite(token string, session *nativeStreamSession, body, base string) (string, error) {
+	return stream.nativeRewriteAt(stream.address, token, session, body, base)
+}
+
+// nativeRewriteAt 与本机播放共用一套清单改写，只是对外基址可换：投屏转发时
+// 传电视实际请求的 Host，播放列表里就不会漏出 127.0.0.1。
+func (stream *nativeStreamServer) nativeRewriteAt(publicBase, token string, session *nativeStreamSession, body, base string) (string, error) {
 	var output []string
 	nextPlaylist := false
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
@@ -217,7 +237,7 @@ func (stream *nativeStreamServer) nativeRewrite(token string, session *nativeStr
 				asset.data = append([]byte{}, session.key...)
 				asset.contentType = "application/octet-stream"
 			}
-			return stream.nativeAsset(token, session, asset)
+			return stream.nativeAssetAt(publicBase, token, session, asset)
 		}
 		if text != "" && !strings.HasPrefix(text, "#") {
 			contentType := ""
@@ -309,6 +329,12 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 	stop := context.AfterFunc(session.ctx, cancel)
 	defer stop()
 	writer.Header().Set("Cache-Control", "no-store")
+	// 播放列表里写回的绝对地址跟着请求来源走：本机播放是 127.0.0.1，投屏
+	// 转发时电视按手机内网地址请求，只有用请求 Host 才能让两边都拉到同一份资源。
+	publicBase := stream.address
+	if host := request.Host; host != "" {
+		publicBase = "http://" + host
+	}
 	if len(asset.data) > 0 && asset.total > int64(len(asset.data)) {
 		if stream.nativeServePrefix(ctx, writer, request, session, asset) {
 			return
@@ -317,7 +343,7 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 	}
 	if len(asset.data) > 0 {
 		if strings.Contains(asset.contentType, "mpegurl") {
-			body, err := stream.nativeRewrite(parts[0], session, nativeAdCleaned(session, string(asset.data), asset.address), asset.address)
+			body, err := stream.nativeRewriteAt(publicBase, parts[0], session, nativeAdCleaned(session, string(asset.data), asset.address), asset.address)
 			stream.nativeLog(info, "playlist_rewrite", asset.address, "kind="+nativePlaylistKind(string(asset.data))+" error="+nativeStreamError(err), 0, "")
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusBadGateway)
@@ -396,7 +422,7 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 			http.Error(writer, "播放列表无效", http.StatusBadGateway)
 			return
 		}
-		rewritten, err := stream.nativeRewrite(parts[0], session, text, finalURL.String())
+		rewritten, err := stream.nativeRewriteAt(publicBase, parts[0], session, text, finalURL.String())
 		stream.nativeLog(info, "playlist_rewrite", finalURL.String(), "kind="+nativePlaylistKind(text)+" error="+nativeStreamError(err), 0, contentType)
 		if err != nil {
 			http.Error(writer, err.Error(), http.StatusBadGateway)

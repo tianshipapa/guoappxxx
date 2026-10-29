@@ -11,6 +11,8 @@ import 'package:window_manager/window_manager.dart';
 import 'app_layout.dart';
 import 'app_orientation.dart';
 import 'app_theme.dart';
+import 'cast/cast_controller.dart';
+import 'cast/cast_sheet.dart';
 import 'core_bridge.dart';
 import 'diary_service.dart';
 import 'playback_diagnostics.dart';
@@ -1442,6 +1444,30 @@ class _PlayerScreenState extends State<PlayerScreen>
                   : (_plan!.local || _plan!.routeCount <= 1)
                   ? null
                   : (route) => _selectRoute(route),
+              onCast: _plan == null || _plan!.local || !CastController.instance.supported
+                  ? null
+                  : () {
+                      final plan = _plan!;
+                      final episode = widget.detail.episodes[_index];
+                      final title = episode.title.isEmpty
+                          ? widget.detail.drama.title
+                          : '${widget.detail.drama.title} ${episode.title}';
+                      final source = CastSource(
+                        repository: widget.repository,
+                        title: title,
+                        directUrl: plan.directUrl,
+                        streamUrl: plan.url,
+                        position: Duration(
+                          milliseconds: (_currentPosition * 1000).round(),
+                        ),
+                        playing: _player.state.playing,
+                        onPause: () {
+                          if (_player.state.playing) _togglePlayback();
+                        },
+                      );
+                      Navigator.pop(menuContext);
+                      unawaited(showCastSheet(context, source: source));
+                    },
             ),
           ),
         ),
