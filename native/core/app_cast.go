@@ -19,15 +19,16 @@ import (
 
 // nativeCastDirectURL 返回可以直接交给电视拉流的原始地址。
 //
-// 返回空串表示这条线路必须经本机转发：本地文件、需要核心重建的播放列表、
-// 需要本机解密的加密分片，都属于这种情况。另外 adBlock 只在本机重写清单时
-// 生效，直连会丢掉去广告能力，但换来「关掉 App 也能继续看」，取舍上以能
-// 独立播放为准。
+// 除了 CENC 加密（内容密钥只在手机侧，电视拿到也解不开）和本地文件，一律把
+// 站源给出的原始地址原样交给电视：即使本机为了去广告、把相对路径补成绝对地址
+// 而重写过播放列表，电视也能自己拉原始清单；AES-128 的 HLS 清单里带着密钥
+// URI，电视同样能自己取。代价只是直连时去不掉广告，换来「投屏后退出 App、
+// 切后台、锁屏都不影响电视播放」，取舍上以能独立播放为准。
 func nativeCastDirectURL(media providerMedia) string {
 	if !isProviderHTTPMediaURL(media.URL) {
 		return ""
 	}
-	if media.Playlist != "" || len(media.CENCKey) > 0 || len(media.HLSKey) > 0 {
+	if len(media.CENCKey) > 0 {
 		return ""
 	}
 	return media.URL

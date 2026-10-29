@@ -122,8 +122,9 @@ func TestNativeCastAddressIsUsable(t *testing.T) {
 	}
 }
 
-// 直连地址只在「电视自己就能播」时才给：需要本机重建播放列表或解密分片的
-// 线路必须留空，让 Flutter 侧退回本机转发。
+// 投屏以「电视能独立播放」为优先：只要不是 CENC 加密，就把站源原始地址
+// 交给电视，让电视自己拉流；本机重写过播放列表、HLS AES-128 都不影响电视
+// 自己取清单和密钥。
 func TestNativeCastDirectURL(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -132,9 +133,9 @@ func TestNativeCastDirectURL(t *testing.T) {
 	}{
 		{"普通 m3u8 可直连", providerMedia{URL: "https://cdn.example.com/a.m3u8"}, "https://cdn.example.com/a.m3u8"},
 		{"普通 mp4 可直连", providerMedia{URL: "https://cdn.example.com/a.mp4"}, "https://cdn.example.com/a.mp4"},
-		{"本机重建的播放列表不可直连", providerMedia{URL: "https://cdn.example.com/a.m3u8", Playlist: "#EXTM3U\n"}, ""},
+		{"重写过播放列表仍可直连原始清单", providerMedia{URL: "https://cdn.example.com/a.m3u8", Playlist: "#EXTM3U\n"}, "https://cdn.example.com/a.m3u8"},
+		{"AES-128 清单仍可直连", providerMedia{URL: "https://cdn.example.com/a.m3u8", HLSKey: []byte("0123456789abcdef")}, "https://cdn.example.com/a.m3u8"},
 		{"CENC 加密分片不可直连", providerMedia{URL: "https://cdn.example.com/a.m3u8", CENCKey: []byte("key")}, ""},
-		{"AES-128 分片不可直连", providerMedia{URL: "https://cdn.example.com/a.m3u8", HLSKey: []byte("key")}, ""},
 		{"非 http 地址不可直连", providerMedia{URL: "magnet:?xt=urn:btih:x"}, ""},
 	}
 	for _, test := range cases {
