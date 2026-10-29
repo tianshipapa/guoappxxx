@@ -49,6 +49,43 @@ func TestHongguoBackupAddressesAndCodecAlternatives(t *testing.T) {
 	}
 }
 
+func TestNativeChoosePlaybackKeepsSelectedRouteAcrossEpisodes(t *testing.T) {
+	media := providerMedia{URL: "https://one.test/video.mp4", Quality: 1080}
+	media.Variants = []providerMedia{
+		{URL: "https://two.test/video.mp4", Quality: 720},
+		{URL: "https://three.test/video.mp4", Quality: 480},
+	}
+	for _, test := range []struct {
+		preferred int
+		want      int
+	}{
+		{0, 0}, {1, 1}, {2, 2},
+		// 这一集没有这条线路：回落到第一条，而不是报错或从未知线路开始。
+		{3, 0}, {9, 0}, {-1, 0},
+	} {
+		choice := nativeChoosePlayback(media, 0, test.preferred)
+		if choice.index != test.want {
+			t.Fatalf("preferred route %d selected %d", test.preferred, choice.index)
+		}
+		if len(choice.media) != 3 {
+			t.Fatalf("preferred route %d changed the route list: %d", test.preferred, len(choice.media))
+		}
+	}
+	engine, err := newNativeEngine(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := engine.nativeOpenPlayback(context.Background(), nativeChoosePlayback(media, 0, 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.stream.server.Close()
+	if plan.RouteIndex != 2 || plan.RouteCount != 3 {
+		t.Fatalf("plan route = %d/%d", plan.RouteIndex, plan.RouteCount)
+	}
+	engine.nativeReleasePlayback(plan.Session)
+}
+
 func TestNativePlaybackFallbackPreservesKeysAndReleasesOnlyOldSession(t *testing.T) {
 	engine, err := newNativeEngine(t.TempDir())
 	if err != nil {

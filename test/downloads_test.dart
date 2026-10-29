@@ -30,6 +30,7 @@ class DownloadRepository extends FixtureRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async {
     final plan = await localPlayback(drama, episode);
     if (plan == null) throw AppFailure('本地文件缺失', code: 'local_media');
@@ -42,6 +43,7 @@ class DownloadRepository extends FixtureRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async {
     onlineCalls++;
     return const PlaybackPlan(url: 'https://synthetic.test/online.mp4');

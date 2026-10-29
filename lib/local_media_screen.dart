@@ -431,6 +431,7 @@ class _LocalFileRepository extends AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) => _plan();
   @override
   Future<PlaybackPlan?> localPlayback(Drama drama, Episode episode) => _plan();
@@ -440,6 +441,7 @@ class _LocalFileRepository extends AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) => throw AppFailure('此成品仅支持本地播放');
   @override
   Future<PlaybackPlan> fallback(PlaybackPlan current) => _plan();

@@ -104,6 +104,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   int _openedIndex = -1;
   int _generation = 0;
   int _requestedQuality = 0;
+  /// 已选中的线路序号（0 起）。切集、换清晰度都沿用它，只有这一集没有
+  /// 这条线路时才会改用别的线路，避免每集都跳回线路 1。
+  int _route = 0;
   bool _loading = true;
   bool _forceOnline = false;
   bool _localFailure = false;
@@ -727,6 +730,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       widget.detail.episodes[_index + 1],
       quality: _requestedQuality,
       adBlock: _preferences.adBlock,
+      route: _route,
     );
   }
 
@@ -979,9 +983,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                 quality: _requestedQuality,
                 online: _forceOnline,
                 adBlock: _preferences.adBlock,
+                route: _route,
               )
             : null);
     _preloader.clear();
+    // 切集、换清晰度都沿用玩家选中的线路；手动切线路时以新线路为准。
+    final preferredRoute = switchRoute ?? _route;
     final ticket = ++_generation;
     _enhancement.suspend();
     _seekSequence++;
@@ -1051,6 +1058,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               localOnly: widget.localOnly,
               online: _forceOnline,
               adBlock: _preferences.adBlock,
+              route: preferredRoute,
             );
       }
       if (prepared == null) {
@@ -1138,6 +1146,19 @@ class _PlayerScreenState extends State<PlayerScreen>
         _plan = plan;
         installed = true;
         _acceptErrors = true;
+        // 手动切线路或自动换备线后，以实际生效的线路为准，后面的集数跟着走；
+        // 正常切集时若这一集没有原来的线路，只记一笔日志、不改已选线路，
+        // 下一集有这条线路时仍然回到它。
+        if (switchRoute != null ||
+            recoveryAction == PlaybackRecoveryAction.alternative ||
+            handoffPlan != null) {
+          _route = plan.routeIndex;
+        } else if (preferredRoute > 0 && plan.routeIndex != preferredRoute) {
+          DiaryService.add(
+            '[Play] 第 ${widget.detail.episodes[index].number} 集没有线路 '
+            '${preferredRoute + 1}，改用线路 ${plan.routeIndex + 1}/${plan.routeCount}',
+          );
+        }
         DiaryService.add(
           '[Play] open generation=$ticket route=${plan.routeIndex}/${plan.routeCount} session=${playbackDiagnosticId(plan.session)} url=${playbackDiagnosticUrl(plan.url)} headers=${plan.headers.keys.toList()}',
         );

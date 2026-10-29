@@ -249,7 +249,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
             )
           else ...[
             Text(
-              '当前第 ${widget.routeIndex + 1} / ${widget.routeCount} 条，切换后从原进度继续',
+              '当前第 ${widget.routeIndex + 1} / ${widget.routeCount} 条，切换后从原进度继续，后续集数沿用这条线路',
               style: helperStyle,
             ),
             const SizedBox(height: 8),

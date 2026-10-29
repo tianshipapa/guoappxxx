@@ -93,6 +93,7 @@ class FixtureRepository extends AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async => const PlaybackPlan(url: 'https://example.test/synthetic.mp4');
   @override
   Future<PlaybackPlan> fallback(PlaybackPlan current) async =>

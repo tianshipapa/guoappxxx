@@ -128,6 +128,7 @@ abstract class AppRepository {
     int quality = 0,
     bool online = false,
     bool adBlock = true,
+    int route = 0,
   }) async => null;
   Future<void> cancelDanmaku() async {}
   Future<DanmakuPage> danmaku(
@@ -210,7 +211,14 @@ abstract class AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
-  }) => resolve(drama, episode, quality: quality, adBlock: adBlock);
+    int route = 0,
+  }) => resolve(
+    drama,
+    episode,
+    quality: quality,
+    adBlock: adBlock,
+    route: route,
+  );
   Future<void> initialize();
   Future<CatalogPage> catalog(
     String source, {
@@ -226,11 +234,14 @@ abstract class AppRepository {
   Future<String> cover(Drama drama, {bool force = false});
   bool coverCached(Drama drama) => false;
   Future<DramaDetail> detail(Drama drama);
+  /// [route] 是上一次选中的线路序号（0 起）：切集、换清晰度时沿用它，
+  /// 只有这一集没有这条线路时核心才会回落到第一条线路。
   Future<PlaybackPlan> resolve(
     Drama drama,
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   });
   Future<PlaybackPlan> fallback(PlaybackPlan current);
   Future<PlaybackPlan> selectRoute(PlaybackPlan current, int route) =>
@@ -388,6 +399,7 @@ class NativeRepository extends AppRepository {
     int quality = 0,
     bool online = false,
     bool adBlock = true,
+    int route = 0,
   }) async => PlaybackPlan.fromJson(
     await _read('preload', {
       'action': 'preload',
@@ -396,6 +408,7 @@ class NativeRepository extends AppRepository {
       'index': episode.number,
       'quality': quality,
       'adBlock': adBlock,
+      'route': route,
       'force': online || access?.canDownload == false,
     }),
   );
@@ -860,6 +873,7 @@ class NativeRepository extends AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async => PlaybackPlan.fromJson(
     await _call({
       'action': 'resolve',
@@ -868,6 +882,7 @@ class NativeRepository extends AppRepository {
       'index': episode.number,
       'quality': quality,
       'adBlock': adBlock,
+      'route': route,
       'sequence': ++_playbackSequence,
     }),
   );
@@ -1028,6 +1043,7 @@ class NativeRepository extends AppRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async => PlaybackPlan.fromJson(
     await _call({
       'action': 'resolve',
@@ -1036,6 +1052,7 @@ class NativeRepository extends AppRepository {
       'index': episode.number,
       'quality': quality,
       'adBlock': adBlock,
+      'route': route,
       'force': true,
       'sequence': ++_playbackSequence,
     }),

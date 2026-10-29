@@ -33,6 +33,7 @@ class RouteRepository extends FixtureRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) async {
     primaryCalls++;
     requestedQualities.add(quality);

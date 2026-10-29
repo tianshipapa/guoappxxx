@@ -34,8 +34,16 @@ class PlaybackPreloader extends ChangeNotifier {
     return error.isNotEmpty ? '下一集预加载暂不可用，切集时会重新获取' : '播放后段提前准备下一集';
   }
 
-  String _key(Drama drama, Episode episode, int quality, bool online, bool adBlock) =>
-      '${drama.id}\u0000${episode.number}\u0000$quality\u0000$online\u0000$adBlock';
+  String _key(
+    Drama drama,
+    Episode episode,
+    int quality,
+    bool online,
+    bool adBlock,
+    int route,
+  ) =>
+      '${drama.id}\u0000${episode.number}\u0000$quality\u0000$online'
+      '\u0000$adBlock\u0000$route';
 
   void prepare(
     Drama drama,
@@ -43,9 +51,10 @@ class PlaybackPreloader extends ChangeNotifier {
     int quality = 0,
     bool online = false,
     bool adBlock = true,
+    int route = 0,
   }) {
     if (_closed) return;
-    final identity = _key(drama, episode, quality, online, adBlock);
+    final identity = _key(drama, episode, quality, online, adBlock, route);
     if (_identity != identity) {
       clear();
       _identity = identity;
@@ -73,6 +82,7 @@ class PlaybackPreloader extends ChangeNotifier {
           quality: quality,
           online: online,
           adBlock: adBlock,
+          route: route,
         );
         if (_closed || ticket != _generation) {
           if (plan != null) await repository.release(plan.session);
@@ -115,9 +125,10 @@ class PlaybackPreloader extends ChangeNotifier {
     int quality = 0,
     bool online = false,
     bool adBlock = true,
+    int route = 0,
   }) {
     final result =
-        _identity == _key(drama, episode, quality, online, adBlock) &&
+        _identity == _key(drama, episode, quality, online, adBlock, route) &&
             _now().isBefore(_expires)
         ? _ready
         : null;

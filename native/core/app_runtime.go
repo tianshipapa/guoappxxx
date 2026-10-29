@@ -807,7 +807,9 @@ func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput
 	if err != nil {
 		return nativePlan{}, err
 	}
-	choice := nativePlaybackChoices(media, input.Quality)
+	// 沿用玩家上一次选中的线路（input.Route，0 起）。这一集没有该序号
+	// 的线路时由 nativeChoosePlayback 回落到第一条。
+	choice := nativeChoosePlayback(media, input.Quality, input.Route)
 	if input.AdBlock != nil {
 		choice.adBlock = *input.AdBlock
 	}

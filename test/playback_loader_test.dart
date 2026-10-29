@@ -19,6 +19,7 @@ class DeferredRepository extends FixtureRepository {
     Episode episode, {
     int quality = 0,
     bool adBlock = true,
+    int route = 0,
   }) {
     final request = Completer<PlaybackPlan>();
     pending[episode.number] = request;
@@ -40,10 +41,73 @@ class DeferredRepository extends FixtureRepository {
   Future<void> release(String session) async => released.add(session);
 }
 
+/// 记录每一次解析带上的线路序号，验证线路确实传到了核心。
+class RouteRepository extends FixtureRepository {
+  final routes = <int>[];
+  final onlineRoutes = <int>[];
+
+  PlaybackPlan _plan(int route) => PlaybackPlan(
+    url: 'https://example.test/$route.mp4',
+    session: 'route-$route',
+    routeIndex: route,
+    routeCount: 2,
+  );
+
+  @override
+  Future<PlaybackPlan> resolve(
+    Drama drama,
+    Episode episode, {
+    int quality = 0,
+    bool adBlock = true,
+    int route = 0,
+  }) async {
+    routes.add(route);
+    return _plan(route);
+  }
+
+  @override
+  Future<PlaybackPlan> resolveOnline(
+    Drama drama,
+    Episode episode, {
+    int quality = 0,
+    bool adBlock = true,
+    int route = 0,
+  }) async {
+    onlineRoutes.add(route);
+    return _plan(route);
+  }
+}
+
 void main() {
   Episode episode(int number) =>
       Episode({'id': '$number', 'currentEpisode': number}, number);
   Future<void> tick() => Future<void>.delayed(Duration.zero);
+
+  test('the selected route reaches every later resolve', () async {
+    final repository = RouteRepository();
+    final loader = PlaybackLoader(repository);
+
+    final first = await loader.load(FixtureRepository.free, episode(1), route: 1);
+    expect(first?.routeIndex, 1);
+    // 切到下一集：仍然带着玩家选中的线路，而不是回到第 1 条。
+    final second = await loader.load(
+      FixtureRepository.free,
+      episode(2),
+      route: 1,
+    );
+    expect(second?.routeIndex, 1);
+    expect(repository.routes, [1, 1]);
+
+    // 在线兜底解析同样不能丢线路。
+    await loader.load(
+      FixtureRepository.free,
+      episode(2),
+      online: true,
+      route: 1,
+    );
+    expect(repository.onlineRoutes, [1]);
+    await loader.close();
+  });
 
   test('a later episode can start before an old resolver completes', () async {
     final repository = DeferredRepository();

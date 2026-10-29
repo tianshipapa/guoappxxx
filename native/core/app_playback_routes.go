@@ -173,6 +173,18 @@ func (engine *nativeEngine) nativeSelectRoute(ctx context.Context, session strin
 	return engine.nativeOpenPlayback(ctx, choice)
 }
 
+// nativeChoosePlayback 把站源返回的媒体整理成可切换的线路列表，并按
+// preferred 选中线路。切集时若沿用玩家选中的线路，序号在这一集仍然存在就
+// 继续用它；只有这一集没有这条线路（线路数量不够）时才回落到第一条，
+// 避免每集都跳回线路 1。
+func nativeChoosePlayback(media providerMedia, quality, preferred int) nativePlaybackChoice {
+	choice := nativePlaybackChoices(media, quality)
+	choice.index = nativePreferredRoute(preferred, len(choice.media))
+	return choice
+}
+
+// nativePreferredRoute 把线路序号规整到当前这集的线路列表里：
+// 序号无效或超出范围时回到第一条线路。
 func nativePreferredRoute(preferred, count int) int {
 	if preferred <= 0 || preferred >= count {
 		return 0

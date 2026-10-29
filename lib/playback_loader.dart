@@ -15,9 +15,16 @@ class PlaybackLoader {
     bool localOnly = false,
     bool online = false,
     bool adBlock = true,
+    int route = 0,
   }) => _load(() async {
     if (online) {
-      return repository.resolveOnline(drama, episode, quality: quality, adBlock: adBlock);
+      return repository.resolveOnline(
+        drama,
+        episode,
+        quality: quality,
+        adBlock: adBlock,
+        route: route,
+      );
     }
     if (localOnly) {
       final plan = await repository.localPlayback(drama, episode);
@@ -26,7 +33,13 @@ class PlaybackLoader {
       }
       return plan;
     }
-    return repository.resolve(drama, episode, quality: quality, adBlock: adBlock);
+    return repository.resolve(
+      drama,
+      episode,
+      quality: quality,
+      adBlock: adBlock,
+      route: route,
+    );
   });
 
   Future<PlaybackPlan?> fallback(PlaybackPlan current) =>
