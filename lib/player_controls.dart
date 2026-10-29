@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'cast/cast_controller.dart';
 import 'lan_controller.dart';
 import 'player_interactions.dart';
 import 'widgets.dart';
@@ -39,6 +40,7 @@ class PlayerControls extends StatefulWidget {
     this.onDanmaku,
     this.onRetryDanmaku,
     this.onPush,
+    this.onCast,
     this.onPictureInPicture,
     this.enhancement,
   });
@@ -71,6 +73,9 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
   final Future<void> Function()? onPush;
+
+  /// 打开 DLNA 投屏面板。非空时这颗按钮改成投屏入口，局域网推送退到兜底。
+  final VoidCallback? onCast;
   final Future<void> Function()? onPictureInPicture;
   final VideoEnhancementController? enhancement;
 
@@ -458,7 +463,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     final showSpeedQuality =
         mobile || fullscreen && width >= 720 || !fullscreen && width >= 560;
     final showPush =
-        widget.onPush != null &&
+        _hasCastTool &&
         (mobile || fullscreen && width >= 860 || !fullscreen && width >= 680);
     final showCompare = fullscreen && width >= 820;
     final showVolume = !widget.swipeEnabled && width >= 360;
@@ -690,6 +695,30 @@ class _PlayerControlsState extends State<PlayerControls> {
   Widget _toolGroup(List<Widget> children) =>
       Row(mainAxisSize: MainAxisSize.min, children: children);
 
+  bool get _hasCastTool => widget.onCast != null || widget.onPush != null;
+
+  /// 控制条上的投屏按钮：优先 DLNA 投屏，平台/场景不支持时才回到旧的
+  /// 局域网推送（推送另一台装了本 App 的设备）。
+  Widget _castTool(Key key) {
+    final onCast = widget.onCast;
+    if (onCast == null) return _lanPushTool(key);
+    final cast = CastController.instance;
+    return AnimatedBuilder(
+      animation: cast,
+      builder: (context, _) => _toolButton(
+        key: key,
+        tooltip: cast.casting
+            ? '正在投屏到 ${cast.device?.name ?? '电视'}'
+            : '投屏到电视',
+        onPressed: widget.enabled ? onCast : null,
+        child: Icon(
+          cast.casting ? Icons.cast_connected_rounded : Icons.cast_rounded,
+          size: 22,
+        ),
+      ),
+    );
+  }
+
   Widget _lanPushTool(Key key) {
     final link = LanController.current;
     if (link == null) return const SizedBox.shrink();
@@ -789,7 +818,7 @@ class _PlayerControlsState extends State<PlayerControls> {
             width: 52,
           ),
       ],
-      if (showPush) _lanPushTool(const ValueKey('fullscreen-lan-push')),
+      if (showPush) _castTool(const ValueKey('fullscreen-lan-push')),
       if (showEpisodes)
         _toolIcon(
           key: const ValueKey('player-episodes'),
@@ -857,8 +886,8 @@ class _PlayerControlsState extends State<PlayerControls> {
           onPressed: widget.enabled ? () => _panel(widget.onRoute!) : null,
           width: 52,
         ),
-      if (widget.onPush != null)
-        _lanPushTool(const ValueKey('fullscreen-lan-push')),
+      if (_hasCastTool)
+        _castTool(const ValueKey('fullscreen-lan-push')),
       if (fullscreen)
         _toolIcon(
           key: const ValueKey('player-episodes'),

@@ -649,6 +649,39 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
+  /// 当前这集能不能投屏：只有 Android 有原生 DLNA，本地文件不支持。
+  bool get _castAvailable =>
+      CastController.instance.supported && _plan != null && !_plan!.local;
+
+  CastSource? _castSource() {
+    final plan = _plan;
+    if (plan == null || plan.local) return null;
+    final episode = widget.detail.episodes[_index];
+    final title = episode.title.isEmpty
+        ? widget.detail.drama.title
+        : '${widget.detail.drama.title} ${episode.title}';
+    return CastSource(
+      repository: widget.repository,
+      title: title,
+      directUrl: plan.directUrl,
+      streamUrl: plan.url,
+      position: Duration(milliseconds: (_currentPosition * 1000).round()),
+      playing: _player.state.playing,
+      onPause: () {
+        if (_player.state.playing) _togglePlayback();
+      },
+    );
+  }
+
+  /// 打开投屏面板。控制条上的投屏按钮和「播放设置 → 投屏」都走这里。
+  Future<void> _openCast() async {
+    if (_closed) return;
+    final source = _castSource();
+    if (source == null) return;
+    _interactions.cancel();
+    await showCastSheet(context, source: source);
+  }
+
   Future<void> _pushToDevice() async {
     final link = LanController.current;
     if (link == null ||
@@ -1465,29 +1498,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                   : (_plan!.local || _plan!.routeCount <= 1)
                   ? null
                   : (route) => _selectRoute(route),
-              onCast: _plan == null || _plan!.local || !CastController.instance.supported
+              onCast: !_castAvailable
                   ? null
                   : () {
-                      final plan = _plan!;
-                      final episode = widget.detail.episodes[_index];
-                      final title = episode.title.isEmpty
-                          ? widget.detail.drama.title
-                          : '${widget.detail.drama.title} ${episode.title}';
-                      final source = CastSource(
-                        repository: widget.repository,
-                        title: title,
-                        directUrl: plan.directUrl,
-                        streamUrl: plan.url,
-                        position: Duration(
-                          milliseconds: (_currentPosition * 1000).round(),
-                        ),
-                        playing: _player.state.playing,
-                        onPause: () {
-                          if (_player.state.playing) _togglePlayback();
-                        },
-                      );
                       Navigator.pop(menuContext);
-                      unawaited(showCastSheet(context, source: source));
+                      unawaited(_openCast());
                     },
             ),
           ),
@@ -1952,6 +1967,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             onRetryDanmaku: _danmaku.canRetry
                 ? _retryDanmakuFromControls
                 : null,
+            onCast: _castAvailable ? () => unawaited(_openCast()) : null,
             onPush: widget.mediaId == null ? _pushToDevice : null,
             onPictureInPicture: _canUsePictureInPicture
                 ? _enterPictureInPicture
